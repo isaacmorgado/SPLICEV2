@@ -1,0 +1,63 @@
+{
+  "name": "splice",
+  "version": "1.0.0",
+  "description": "Adobe Premiere Pro UXP Plugin for automation with AI services",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && cp manifest.json dist/",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "uxp:watch": "uxp plugin watch --path ./dist --apps premierepro",
+    "uxp:load": "uxp plugin load --manifest ./dist/manifest.json --apps premierepro",
+    "uxp:reload": "uxp plugin reload --apps premierepro",
+    "uxp:package": "uxp plugin package --manifest ./dist/manifest.json --apps premierepro --outputPath ./release",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "adobe",
+    "uxp",
+    "premiere-pro",
+    "plugin",
+    "automation",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@adobe/cc-ext-uxp-types": "^7.3.1",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "happy-dom": "^15.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@spectrum-web-components/theme": "^1.10.0",
+    "@spectrum-web-components/styles": "^1.10.0",
+    "@spectrum-web-components/button": "^1.10.0",
+    "@spectrum-web-components/textfield": "^1.10.0",
+    "@spectrum-web-components/action-button": "^1.10.0",
+    "@spectrum-web-components/icons-workflow": "^1.10.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
