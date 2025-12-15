@@ -3,14 +3,16 @@ type SqlFunction = (strings: TemplateStringsArray, ...values: unknown[]) => Prom
 
 let _sql: SqlFunction | null = null;
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const neonModule = require('@neondatabase/serverless');
+
 export async function getSql(): Promise<SqlFunction> {
   if (!_sql) {
-    const { neon } = await import('@neondatabase/serverless');
     const url = process.env.DATABASE_URL;
     if (!url) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
-    _sql = neon(url) as unknown as SqlFunction;
+    _sql = neonModule.neon(url) as unknown as SqlFunction;
   }
   return _sql;
 }
