@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth';
-import { getSubscriptionByUserId } from '../_shared/db';
+import { getSubscriptionByUserId } from '../shared/db';
 import { createCustomerPortalSession } from '../lib/stripe';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

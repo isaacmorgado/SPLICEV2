@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getUserByEmail } from '../_shared/db';
+import { getUserByEmail } from '../shared/db';
 import { verifyPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
 import {
   checkRateLimit,

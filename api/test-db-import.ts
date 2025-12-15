@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { hello } from './_shared/db-minimal';
+import { hello } from './shared/db-minimal';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {

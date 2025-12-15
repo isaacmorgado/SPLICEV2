@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getExpiredTrials, convertTrialToFree } from '../_shared/db';
+import { getExpiredTrials, convertTrialToFree } from '../shared/db';
 
 /**
  * Cron job to expire trials and convert them to free tier

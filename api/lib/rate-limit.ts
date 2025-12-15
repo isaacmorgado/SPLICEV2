@@ -1,4 +1,4 @@
-import { getSql } from '../_shared/db';
+import { getSql } from '../shared/db';
 
 /**
  * Rate Limiter for Vercel Serverless Functions

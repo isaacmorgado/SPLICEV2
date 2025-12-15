@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createUser, getUserByEmail, createTrialSubscription } from '../_shared/db';
+import { createUser, getUserByEmail, createTrialSubscription } from '../shared/db';
 import { hashPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
 import { createCustomer } from '../lib/stripe';
 import { validateReferralCode, redeemReferralCode } from '../lib/referrals';
