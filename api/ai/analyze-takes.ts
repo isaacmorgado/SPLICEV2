@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
+import { authenticateRequest } from '../lib/auth';
+import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
 
 type LLMProvider = 'openai' | 'gemini';
 

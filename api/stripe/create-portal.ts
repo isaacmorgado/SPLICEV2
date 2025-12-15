@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { getSubscriptionByUserId } from '../_lib/db';
-import { createCustomerPortalSession } from '../_lib/stripe';
+import { authenticateRequest } from '../lib/auth';
+import { getSubscriptionByUserId } from '../lib/db';
+import { createCustomerPortalSession } from '../lib/stripe';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

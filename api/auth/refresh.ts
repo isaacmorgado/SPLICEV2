@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyRefreshToken, createToken, createRefreshToken, getTokenExpiry } from '../_lib/auth';
-import { getUserByEmail } from '../_lib/db';
+import { verifyRefreshToken, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
+import { getUserByEmail } from '../lib/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

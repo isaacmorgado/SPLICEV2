@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createUser, getUserByEmail, createTrialSubscription } from '../_lib/db';
-import { hashPassword, createToken, createRefreshToken, getTokenExpiry } from '../_lib/auth';
-import { createCustomer } from '../_lib/stripe';
-import { validateReferralCode, redeemReferralCode } from '../_lib/referrals';
+import { createUser, getUserByEmail, createTrialSubscription } from '../lib/db';
+import { hashPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
+import { createCustomer } from '../lib/stripe';
+import { validateReferralCode, redeemReferralCode } from '../lib/referrals';
 import {
   checkRateLimit,
   getClientIP,
   RATE_LIMITS,
   validatePasswordComplexity,
   validateEmail,
-} from '../_lib/rate-limit';
+} from '../lib/rate-limit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

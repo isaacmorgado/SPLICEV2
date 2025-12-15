@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { redeemReferralCode, validateReferralCode } from '../_lib/referrals';
+import { authenticateRequest } from '../lib/auth';
+import { redeemReferralCode, validateReferralCode } from '../lib/referrals';
 
 /**
  * Redeem a referral code

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
-import { isolateVoiceWithDemucs } from '../_lib/voice-isolation';
+import { authenticateRequest } from '../lib/auth';
+import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
+import { isolateVoiceWithDemucs } from '../lib/voice-isolation';
 
 // Use global fetch types for Node.js 18+
 declare const fetch: typeof globalThis.fetch;

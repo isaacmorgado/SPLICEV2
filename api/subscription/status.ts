@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { getSubscriptionByUserId } from '../_lib/db';
-import { TIERS } from '../_lib/stripe';
-import { checkUsage } from '../_lib/usage';
+import { authenticateRequest } from '../lib/auth';
+import { getSubscriptionByUserId } from '../lib/db';
+import { TIERS } from '../lib/stripe';
+import { checkUsage } from '../lib/usage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

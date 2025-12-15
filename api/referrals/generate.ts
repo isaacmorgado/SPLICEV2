@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { generateReferralCode, getReferralStats } from '../_lib/referrals';
+import { authenticateRequest } from '../lib/auth';
+import { generateReferralCode, getReferralStats } from '../lib/referrals';
 
 /**
  * Generate or retrieve a user's referral code

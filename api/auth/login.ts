@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getUserByEmail } from '../_lib/db';
-import { verifyPassword, createToken, createRefreshToken, getTokenExpiry } from '../_lib/auth';
+import { getUserByEmail } from '../lib/db';
+import { verifyPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
 import {
   checkRateLimit,
   getClientIP,
@@ -9,7 +9,7 @@ import {
   recordFailedLogin,
   clearFailedLogins,
   validateEmail,
-} from '../_lib/rate-limit';
+} from '../lib/rate-limit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

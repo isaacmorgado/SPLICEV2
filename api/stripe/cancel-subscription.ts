@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { getSubscriptionByUserId } from '../_lib/db';
-import { checkCancellationEligibility } from '../_lib/cancellation';
-import { stripe } from '../_lib/stripe';
+import { authenticateRequest } from '../lib/auth';
+import { getSubscriptionByUserId } from '../lib/db';
+import { checkCancellationEligibility } from '../lib/cancellation';
+import { stripe } from '../lib/stripe';
 
 /**
  * Cancel Subscription Endpoint

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../_lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
-import { transcribeWithGroq } from '../_lib/groq';
+import { authenticateRequest } from '../lib/auth';
+import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
+import { transcribeWithGroq } from '../lib/groq';
 
 // Fallback to OpenAI if user provides their own API key
 const OPENAI_WHISPER_URL = 'https://api.openai.com/v1/audio/transcriptions';

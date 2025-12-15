@@ -5,9 +5,9 @@ import {
   getSubscription,
   stripe,
   TIERS,
-} from '../_lib/stripe';
-import { updateSubscription, sql, transaction } from '../_lib/db';
-import { decrementReferralMonths } from '../_lib/referrals';
+} from '../lib/stripe';
+import { updateSubscription, sql, transaction } from '../lib/db';
+import { decrementReferralMonths } from '../lib/referrals';
 import type Stripe from 'stripe';
 
 // Disable body parsing for webhook signature verification
