@@ -12,6 +12,11 @@ const DEFAULT_CONFIG: TakeDetectorConfig = {
 };
 
 /**
+ * Default take selection strategy
+ */
+const DEFAULT_SELECTION_STRATEGY: TakeSelectionStrategy = 'best_only';
+
+/**
  * Service for detecting and managing takes in video content.
  *
  * Pipeline:
@@ -22,9 +27,26 @@ const DEFAULT_CONFIG: TakeDetectorConfig = {
  */
 export class TakeDetector {
   private config: TakeDetectorConfig;
+  private selectionStrategy: TakeSelectionStrategy;
 
   constructor(config: Partial<TakeDetectorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.selectionStrategy = DEFAULT_SELECTION_STRATEGY;
+  }
+
+  /**
+   * Set the take selection strategy
+   */
+  setSelectionStrategy(strategy: TakeSelectionStrategy): void {
+    this.selectionStrategy = strategy;
+    logger.info(`Take selection strategy set to: ${strategy}`);
+  }
+
+  /**
+   * Get the current selection strategy
+   */
+  getSelectionStrategy(): TakeSelectionStrategy {
+    return this.selectionStrategy;
   }
 
   /**
@@ -91,6 +113,9 @@ export class TakeDetector {
         .replace('{takeNumber}', String(takeNumber))
         .replace('{phrase}', phrasePreview);
 
+      // Calculate confidence scores for this take
+      const confidence = this.calculateConfidenceScores(take, groupTakes);
+
       groupTakes.push({
         groupId: phraseKey,
         phrase: take.text,
@@ -102,12 +127,14 @@ export class TakeDetector {
         score: take.score,
         colorIndex,
         clipName,
+        confidence,
+        selected: false, // Will be set based on selection strategy
       });
 
       globalTakeCounter++;
     }
 
-    // Convert to TakeGroup array
+    // Convert to TakeGroup array and apply selection strategy
     const result: TakeGroup[] = [];
 
     groups.forEach((takes, _phrase) => {
@@ -118,6 +145,11 @@ export class TakeDetector {
           ? bestIndex
           : takes.reduce((best, t, i) => (t.score > takes[best].score ? i : best), 0);
 
+      // Apply selection strategy
+      takes.forEach((take, index) => {
+        take.selected = this.shouldSelectTake(index, bestTakeIndex, takes.length);
+      });
+
       result.push({
         id: takes[0].groupId,
         phrase: takes[0].text.slice(0, 50),
@@ -127,6 +159,156 @@ export class TakeDetector {
     });
 
     return result;
+  }
+
+  /**
+   * Calculate confidence scores for a take
+   */
+  private calculateConfidenceScores(
+    take: {
+      start: number;
+      end: number;
+      text: string;
+      score: number;
+    },
+    existingTakes: NormalizedTake[]
+  ): TakeConfidenceScores {
+    // Boundary accuracy: Based on duration consistency with other takes
+    let boundaryAccuracy = 0.8; // Default
+    if (existingTakes.length > 0) {
+      const durations = existingTakes.map((t) => t.end - t.start);
+      const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+      const currentDuration = take.end - take.start;
+      const durationDiff = Math.abs(currentDuration - avgDuration);
+      boundaryAccuracy = Math.max(0, 1 - durationDiff / avgDuration);
+    }
+
+    // Text match: How similar the text is to other takes (based on length similarity)
+    let textMatch = 0.9; // Default high since AI groups similar phrases
+    if (existingTakes.length > 0) {
+      const lengths = existingTakes.map((t) => t.text.length);
+      const avgLength = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+      const lengthDiff = Math.abs(take.text.length - avgLength);
+      textMatch = Math.max(0.5, 1 - lengthDiff / avgLength);
+    }
+
+    // Audio quality: Use the AI's score directly
+    const audioQuality = take.score;
+
+    // Overall: Weighted average
+    const overall = boundaryAccuracy * 0.3 + textMatch * 0.2 + audioQuality * 0.5;
+
+    return {
+      boundaryAccuracy,
+      textMatch,
+      audioQuality,
+      overall,
+    };
+  }
+
+  /**
+   * Determine if a take should be selected based on current strategy
+   */
+  private shouldSelectTake(takeIndex: number, bestTakeIndex: number, _totalTakes: number): boolean {
+    switch (this.selectionStrategy) {
+      case 'best_only':
+        return takeIndex === bestTakeIndex;
+      case 'all_takes':
+        return true;
+      case 'manual':
+        // Manual selection starts with nothing selected
+        return false;
+      default:
+        return takeIndex === bestTakeIndex;
+    }
+  }
+
+  /**
+   * Generate a preview of what will be kept/removed based on current selections
+   */
+  generatePreview(groups: TakeGroup[]): TakePreview {
+    let totalDuration = 0;
+    let keepDuration = 0;
+    let removeDuration = 0;
+
+    const takeGroups = groups.map((group) => {
+      const selectedTakes: number[] = [];
+      const removedTakes: number[] = [];
+
+      group.takes.forEach((take, index) => {
+        const duration = take.end - take.start;
+        totalDuration += duration;
+
+        if (take.selected) {
+          selectedTakes.push(index);
+          keepDuration += duration;
+        } else {
+          removedTakes.push(index);
+          removeDuration += duration;
+        }
+      });
+
+      return {
+        groupId: group.id,
+        phrase: group.phrase,
+        selectedTakes,
+        removedTakes,
+      };
+    });
+
+    return {
+      totalDuration,
+      keepDuration,
+      removeDuration,
+      takeGroups,
+    };
+  }
+
+  /**
+   * Toggle manual selection for a specific take
+   */
+  toggleTakeSelection(groups: TakeGroup[], groupIndex: number, takeIndex: number): TakeGroup[] {
+    if (this.selectionStrategy !== 'manual') {
+      logger.warn('Cannot toggle selection when not in manual mode');
+      return groups;
+    }
+
+    const updatedGroups = [...groups];
+    const group = updatedGroups[groupIndex];
+
+    if (group && group.takes[takeIndex]) {
+      group.takes[takeIndex].selected = !group.takes[takeIndex].selected;
+    }
+
+    return updatedGroups;
+  }
+
+  /**
+   * Select a take within a group (for manual mode)
+   */
+  selectTake(groups: TakeGroup[], groupIndex: number, takeIndex: number): TakeGroup[] {
+    const updatedGroups = [...groups];
+    const group = updatedGroups[groupIndex];
+
+    if (group && group.takes[takeIndex]) {
+      group.takes[takeIndex].selected = true;
+    }
+
+    return updatedGroups;
+  }
+
+  /**
+   * Deselect a take within a group (for manual mode)
+   */
+  deselectTake(groups: TakeGroup[], groupIndex: number, takeIndex: number): TakeGroup[] {
+    const updatedGroups = [...groups];
+    const group = updatedGroups[groupIndex];
+
+    if (group && group.takes[takeIndex]) {
+      group.takes[takeIndex].selected = false;
+    }
+
+    return updatedGroups;
   }
 
   /**

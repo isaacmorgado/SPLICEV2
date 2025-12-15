@@ -5,6 +5,11 @@
  * 1. Primary: AME (Adobe Media Encoder) export - most reliable
  * 2. Fallback: Direct source file reading
  *
+ * Performance optimizations:
+ * - Performance metrics tracking for all operations
+ * - Optimized WAV parsing with caching
+ * - Memory-efficient buffer handling
+ *
  * Throws SpliceError if both methods fail (no mock fallback).
  */
 
@@ -13,6 +18,7 @@ import { SpliceError, SpliceErrorCode, isSpliceError } from '../lib/errors';
 import { ameExporter, AMEExportResult } from './ame-exporter';
 import { audioChunker, AudioChunk } from './audio-chunker';
 import { AUDIO_CONFIG, validateTimelineDuration } from '../config/audio-config';
+import { PerformanceMetrics } from '../utils/performance-metrics';
 
 declare const require: (module: string) => any;
 
@@ -53,9 +59,18 @@ export class AudioExtractor {
   private app: any = null;
   private project: any = null;
   private fs: any = null;
+  private metrics: PerformanceMetrics;
 
   constructor() {
+    this.metrics = new PerformanceMetrics();
     this.initializeAPI();
+  }
+
+  /**
+   * Get performance metrics for this extractor instance.
+   */
+  getMetrics(): PerformanceMetrics {
+    return this.metrics;
   }
 
   private initializeAPI(): void {
@@ -82,94 +97,100 @@ export class AudioExtractor {
    * Throws SpliceError if both methods fail.
    */
   async extractFromTimeline(): Promise<AudioExtractionResult> {
-    if (!this.isAvailable()) {
-      throw new SpliceError(
-        SpliceErrorCode.PREMIERE_NOT_AVAILABLE,
-        'Premiere Pro API not available',
-        { hasApp: !!this.app, hasProject: !!this.project }
-      );
-    }
+    return this.metrics.measure('extractFromTimeline', async () => {
+      if (!this.isAvailable()) {
+        throw new SpliceError(
+          SpliceErrorCode.PREMIERE_NOT_AVAILABLE,
+          'Premiere Pro API not available',
+          { hasApp: !!this.app, hasProject: !!this.project }
+        );
+      }
 
-    const activeSequence = this.project.activeSequence;
-    if (!activeSequence) {
-      throw new SpliceError(SpliceErrorCode.AUDIO_NO_SEQUENCE, 'No active sequence found');
-    }
+      const activeSequence = this.project.activeSequence;
+      if (!activeSequence) {
+        throw new SpliceError(SpliceErrorCode.AUDIO_NO_SEQUENCE, 'No active sequence found');
+      }
 
-    const duration = activeSequence.end?.seconds;
-    if (!duration || duration <= 0) {
-      throw new SpliceError(
-        SpliceErrorCode.AUDIO_INVALID_DURATION,
-        `Invalid sequence duration: ${duration}`,
-        { duration }
-      );
-    }
+      const duration = activeSequence.end?.seconds;
+      if (!duration || duration <= 0) {
+        throw new SpliceError(
+          SpliceErrorCode.AUDIO_INVALID_DURATION,
+          `Invalid sequence duration: ${duration}`,
+          { duration }
+        );
+      }
 
-    // Validate timeline duration to prevent excessive processing
-    const durationValidation = validateTimelineDuration(duration);
-    if (!durationValidation.valid) {
-      throw new SpliceError(
-        SpliceErrorCode.AUDIO_TIMELINE_TOO_LONG,
-        durationValidation.error || 'Timeline too long',
-        { duration, maxDuration: AUDIO_CONFIG.MAX_TIMELINE_DURATION_SECONDS }
-      );
-    }
-    if (durationValidation.warning) {
-      logger.warn(durationValidation.warning);
-    }
+      // Validate timeline duration to prevent excessive processing
+      const durationValidation = validateTimelineDuration(duration);
+      if (!durationValidation.valid) {
+        throw new SpliceError(
+          SpliceErrorCode.AUDIO_TIMELINE_TOO_LONG,
+          durationValidation.error || 'Timeline too long',
+          { duration, maxDuration: AUDIO_CONFIG.MAX_TIMELINE_DURATION_SECONDS }
+        );
+      }
+      if (durationValidation.warning) {
+        logger.warn(durationValidation.warning);
+      }
 
-    let ameError: SpliceError | undefined;
-    let sourceError: string | undefined;
+      let ameError: SpliceError | undefined;
+      let sourceError: string | undefined;
 
-    // Strategy 1: AME Export (preferred)
-    if (ameExporter.isAvailable()) {
-      logger.info('Attempting AME export for audio extraction...');
+      // Strategy 1: AME Export (preferred)
+      if (ameExporter.isAvailable()) {
+        logger.info('Attempting AME export for audio extraction...');
 
-      try {
-        const exportResult = await ameExporter.exportSequenceAudio(activeSequence, {
-          workArea: 'full',
-        });
+        try {
+          const exportResult = await this.metrics.measure('ameExport', async () => {
+            return await ameExporter.exportSequenceAudio(activeSequence, {
+              workArea: 'full',
+            });
+          });
 
-        // AME exporter now throws on failure, so if we get here it succeeded
-        return await this.handleSuccessfulExport(exportResult, duration);
-      } catch (error) {
-        // Capture the error for context if fallback also fails
-        if (isSpliceError(error)) {
-          ameError = error;
-        } else {
-          ameError = new SpliceError(
-            SpliceErrorCode.AME_EXPORT_FAILED,
-            error instanceof Error ? error.message : 'Unknown AME export error',
-            undefined,
-            error instanceof Error ? error : undefined
-          );
+          // AME exporter now throws on failure, so if we get here it succeeded
+          return await this.handleSuccessfulExport(exportResult, duration);
+        } catch (error) {
+          // Capture the error for context if fallback also fails
+          if (isSpliceError(error)) {
+            ameError = error;
+          } else {
+            ameError = new SpliceError(
+              SpliceErrorCode.AME_EXPORT_FAILED,
+              error instanceof Error ? error.message : 'Unknown AME export error',
+              undefined,
+              error instanceof Error ? error : undefined
+            );
+          }
+          logger.warn('AME export failed, trying fallback...', ameError);
         }
-        logger.warn('AME export failed, trying fallback...', ameError);
+      } else {
+        logger.info('AME not available, skipping to fallback extraction');
       }
-    } else {
-      logger.info('AME not available, skipping to fallback extraction');
-    }
 
-    // Strategy 2: Source File Reading (fallback)
-    logger.info('Attempting source file extraction...');
-    try {
-      const sourceResult = await this.extractFromSourceFiles(activeSequence);
-      if (sourceResult) {
-        return sourceResult;
+      // Strategy 2: Source File Reading (fallback)
+      logger.info('Attempting source file extraction...');
+      try {
+        const sourceResult = await this.metrics.measure('sourceFileExtraction', async () => {
+          return await this.extractFromSourceFiles(activeSequence);
+        });
+        if (sourceResult) {
+          return sourceResult;
+        }
+        sourceError = 'No audio clips found on timeline or source files unreadable';
+      } catch (error) {
+        sourceError = error instanceof Error ? error.message : 'Unknown source extraction error';
       }
-      sourceError = 'No audio clips found on timeline or source files unreadable';
-    } catch (error) {
-      sourceError = error instanceof Error ? error.message : 'Unknown source extraction error';
-    }
 
-    // Both methods failed - throw detailed error
-    throw new SpliceError(
-      SpliceErrorCode.AUDIO_EXTRACTION_FAILED,
-      'Audio extraction failed. Neither AME export nor source file reading succeeded.',
-      {
-        ameError: ameError?.toLogString(),
-        sourceError,
-      }
-    );
+      // Both methods failed - throw detailed error
+      throw new SpliceError(
+        SpliceErrorCode.AUDIO_EXTRACTION_FAILED,
+        'Audio extraction failed. Neither AME export nor source file reading succeeded.',
+        {
+          ameError: ameError?.toLogString(),
+          sourceError,
+        }
+      );
+    });
   }
 
   /**
@@ -184,7 +205,13 @@ export class AudioExtractor {
 
     try {
       // Read the exported file
-      buffer = await this.readExportedFile(exportResult.filePath);
+      buffer = await this.metrics.measure(
+        'readExportedFile',
+        async () => {
+          return await this.readExportedFile(exportResult.filePath);
+        },
+        { filePath: exportResult.filePath }
+      );
       logger.info(`Successfully read exported audio: ${buffer.byteLength} bytes`);
 
       // Parse actual audio properties from WAV header (#12)
@@ -202,7 +229,13 @@ export class AudioExtractor {
       let chunks: AudioChunk[] | undefined;
       if (audioChunker.needsChunking(buffer)) {
         logger.info('Audio exceeds 25MB, chunking for Whisper API...');
-        chunks = await audioChunker.chunkWavBuffer(buffer, actualDuration);
+        chunks = await this.metrics.measure(
+          'chunkAudio',
+          async () => {
+            return await audioChunker.chunkWavBuffer(buffer!, actualDuration);
+          },
+          { bufferSize: buffer.byteLength }
+        );
       }
 
       return {

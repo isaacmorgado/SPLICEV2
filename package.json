@@ -17,7 +17,12 @@
     "uxp:load": "uxp plugin load --manifest ./dist/manifest.json --apps premierepro",
     "uxp:reload": "uxp plugin reload --apps premierepro",
     "uxp:package": "uxp plugin package --manifest ./dist/manifest.json --apps premierepro --outputPath ./release",
-    "prepare": "husky"
+    "prepare": "husky",
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:skip-tests": "bash scripts/deploy.sh --skip-tests",
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "db:migrate:dev": "bash scripts/db-migrate.sh development",
+    "db:migrate:prod": "bash scripts/db-migrate.sh production"
   },
   "keywords": [
     "adobe",

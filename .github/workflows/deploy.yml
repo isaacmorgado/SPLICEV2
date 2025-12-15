@@ -1,0 +1,206 @@
+name: Deploy to Vercel
+
+on:
+  # Run on pull requests for testing
+  pull_request:
+    branches: [main, develop]
+
+  # Run on push to main branch for production deployment
+  push:
+    branches: [main]
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  # ===========================================
+  # TEST JOB - Runs on all PRs and pushes
+  # ===========================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript type check
+        run: npm run typecheck
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Build project
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "dist/manifest.json" ]; then
+            echo "Error: manifest.json not found in dist/"
+            exit 1
+          fi
+          echo "Build artifacts verified successfully"
+
+  # ===========================================
+  # PREVIEW DEPLOYMENT - Runs on PRs only
+  # ===========================================
+  deploy-preview:
+    name: Deploy Preview (PR)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Preview to Vercel
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "Preview deployment: $DEPLOYMENT_URL"
+
+      - name: Comment PR with Preview URL
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### Preview Deployment Ready! 🚀\n\n**URL:** ${{ steps.deploy.outputs.deployment_url }}\n\n**Health Check:** ${{ steps.deploy.outputs.deployment_url }}/api/health`
+            })
+
+  # ===========================================
+  # PRODUCTION DEPLOYMENT - Runs on main branch only
+  # ===========================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel Production
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "Production deployment: $DEPLOYMENT_URL"
+
+      - name: Verify Deployment Health
+        run: |
+          sleep 10  # Wait for deployment to be fully ready
+          HEALTH_URL="${{ steps.deploy.outputs.deployment_url }}/api/health"
+          echo "Checking health endpoint: $HEALTH_URL"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$HEALTH_URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "Response code: $HTTP_CODE"
+          echo "Response body: $BODY"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Health check failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          # Check if status is healthy
+          if echo "$BODY" | grep -q '"status":"healthy"'; then
+            echo "✓ Deployment is healthy!"
+          else
+            echo "✗ Deployment is not healthy"
+            echo "$BODY"
+            exit 1
+          fi
+
+      - name: Create Deployment Summary
+        run: |
+          echo "## Production Deployment Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment URL:** ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Check:** ✓ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify API endpoints are working" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check Stripe webhook configuration" >> $GITHUB_STEP_SUMMARY
+          echo "3. Test plugin authentication" >> $GITHUB_STEP_SUMMARY
+          echo "4. Monitor error logs: \`vercel logs --prod\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### Production Deployment Failed ❌\n\n**Commit:** ${{ github.sha }}\n**Workflow:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\nPlease check the logs and fix any issues before retrying.`
+            })

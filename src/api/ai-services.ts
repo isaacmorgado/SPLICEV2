@@ -3,6 +3,8 @@ import { BackendClient, backendClient } from './backend-client';
 import { WhisperClient } from './whisper';
 import { ElevenLabsClient } from './elevenlabs';
 import { LLMProvider } from './llm-provider';
+import { transcriptionCache, voiceIsolationCache } from '../utils/audio-cache';
+import { PerformanceMetrics } from '../utils/performance-metrics';
 
 interface ColorMatchResult {
   success: boolean;
@@ -39,16 +41,54 @@ export class AIServices {
   private elevenLabsClient?: ElevenLabsClient;
   private llmProvider?: LLMProvider;
   private mode: AIServicesMode;
+  private metrics: PerformanceMetrics;
+  private enableCache: boolean;
 
   constructor(backend: BackendClient = backendClient, options: AIServicesOptions = {}) {
     this.backend = backend;
     this.whisperClient = options.whisperClient;
     this.elevenLabsClient = options.elevenLabsClient;
     this.llmProvider = options.llmProvider;
+    this.metrics = new PerformanceMetrics();
+    this.enableCache = true; // Cache enabled by default
 
     // Auto-detect mode based on available clients
     this.mode = this.detectMode();
     logger.info(`AIServices initialized in ${this.mode} mode`);
+  }
+
+  /**
+   * Get performance metrics for AI services.
+   */
+  getMetrics(): PerformanceMetrics {
+    return this.metrics;
+  }
+
+  /**
+   * Enable or disable caching for AI operations.
+   */
+  setCacheEnabled(enabled: boolean): void {
+    this.enableCache = enabled;
+    logger.info(`AI Services cache ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Get cache statistics.
+   */
+  getCacheStats() {
+    return {
+      transcription: transcriptionCache.getStats(),
+      voiceIsolation: voiceIsolationCache.getStats(),
+    };
+  }
+
+  /**
+   * Clear all caches.
+   */
+  clearCaches(): void {
+    transcriptionCache.clear();
+    voiceIsolationCache.clear();
+    logger.info('All AI service caches cleared');
   }
 
   // ============================================
@@ -89,57 +129,89 @@ export class AIServices {
   /**
    * Transcribe audio using AI speech-to-text
    * Routes to Whisper BYOK client or backend proxy based on mode
+   * Uses caching to avoid reprocessing identical audio
    */
   async transcribe(
     audioBuffer: ArrayBuffer,
     options: WhisperOptions = {}
   ): Promise<TranscriptionResult> {
-    logger.info(`Starting transcription (${this.mode} mode)`);
+    return this.metrics.measure(
+      'transcribe',
+      async () => {
+        logger.info(`Starting transcription (${this.mode} mode)`);
 
-    if (this.mode === 'byok' && this.whisperClient) {
-      return this.whisperClient.transcribe(audioBuffer, options);
-    }
+        // Check cache first
+        if (this.enableCache) {
+          const cached = await transcriptionCache.getByAudio(audioBuffer);
+          if (cached) {
+            logger.info('Using cached transcription result');
+            return cached;
+          }
+        }
 
-    // Proxy mode - use backend
-    return this.backend.transcribe(audioBuffer);
+        // Not cached, perform transcription
+        let result: TranscriptionResult;
+        if (this.mode === 'byok' && this.whisperClient) {
+          result = await this.whisperClient.transcribe(audioBuffer, options);
+        } else {
+          // Proxy mode - use backend
+          result = await this.backend.transcribe(audioBuffer);
+        }
+
+        // Cache the result
+        if (this.enableCache) {
+          await transcriptionCache.setByAudio(audioBuffer, result);
+        }
+
+        return result;
+      },
+      { bufferSize: audioBuffer.byteLength }
+    );
   }
 
   /**
    * Transcribe with word-level timestamps for precise silence detection
    * Only available in BYOK mode (backend doesn't return word timestamps yet)
+   * Note: Caching is done at the TranscriptionResult level, not WhisperTranscriptionResult
    */
   async transcribeWithTimestamps(
     audioBuffer: ArrayBuffer,
     options: Omit<WhisperOptions, 'responseFormat'> = {}
   ): Promise<WhisperTranscriptionResult> {
-    logger.info(`Starting transcription with timestamps (${this.mode} mode)`);
+    return this.metrics.measure(
+      'transcribeWithTimestamps',
+      async () => {
+        logger.info(`Starting transcription with timestamps (${this.mode} mode)`);
 
-    if (this.mode === 'byok' && this.whisperClient) {
-      return this.whisperClient.transcribeWithTimestamps(audioBuffer, options);
-    }
+        if (this.mode === 'byok' && this.whisperClient) {
+          return this.whisperClient.transcribeWithTimestamps(audioBuffer, options);
+        }
 
-    // Proxy mode - backend transcription (may not have word-level timestamps)
-    const result = await this.backend.transcribe(audioBuffer);
+        // Proxy mode - backend transcription (may not have word-level timestamps)
+        const result = await this.backend.transcribe(audioBuffer);
 
-    // Convert to WhisperTranscriptionResult format
-    return {
-      task: 'transcribe',
-      language: 'en',
-      duration: 0,
-      text: result.text,
-      segments: result.segments.map((seg, idx) => ({
-        id: idx,
-        seek: 0,
-        start: seg.start,
-        end: seg.end,
-        text: seg.text,
-        tokens: [],
-        temperature: 0,
-        avg_logprob: 0,
-        compression_ratio: 0,
-        no_speech_prob: 1 - seg.confidence,
-      })),
-    };
+        // Convert to WhisperTranscriptionResult format
+        return {
+          task: 'transcribe',
+          language: 'en',
+          duration: 0,
+          text: result.text,
+          segments: result.segments.map((seg, idx) => ({
+            id: idx,
+            seek: 0,
+            start: seg.start,
+            end: seg.end,
+            text: seg.text,
+            tokens: [],
+            temperature: 0,
+            avg_logprob: 0,
+            compression_ratio: 0,
+            no_speech_prob: 1 - seg.confidence,
+          })),
+        };
+      },
+      { bufferSize: audioBuffer.byteLength }
+    );
   }
 
   /**
@@ -157,16 +229,41 @@ export class AIServices {
   /**
    * Isolate voice from background audio
    * Routes to ElevenLabs BYOK client or backend proxy based on mode
+   * Uses caching to avoid reprocessing identical audio
    */
   async isolateVoice(audioBuffer: ArrayBuffer): Promise<IsolatedAudio> {
-    logger.info(`Starting voice isolation (${this.mode} mode)`);
+    return this.metrics.measure(
+      'isolateVoice',
+      async () => {
+        logger.info(`Starting voice isolation (${this.mode} mode)`);
 
-    if (this.mode === 'byok' && this.elevenLabsClient) {
-      return this.elevenLabsClient.isolateVoice(audioBuffer);
-    }
+        // Check cache first
+        if (this.enableCache) {
+          const cached = await voiceIsolationCache.getByAudio(audioBuffer);
+          if (cached) {
+            logger.info('Using cached voice isolation result');
+            return cached;
+          }
+        }
 
-    // Proxy mode - use backend
-    return this.backend.isolateVoice(audioBuffer);
+        // Not cached, perform isolation
+        let result: IsolatedAudio;
+        if (this.mode === 'byok' && this.elevenLabsClient) {
+          result = await this.elevenLabsClient.isolateVoice(audioBuffer);
+        } else {
+          // Proxy mode - use backend
+          result = await this.backend.isolateVoice(audioBuffer);
+        }
+
+        // Cache the result
+        if (this.enableCache) {
+          await voiceIsolationCache.setByAudio(audioBuffer, result);
+        }
+
+        return result;
+      },
+      { bufferSize: audioBuffer.byteLength }
+    );
   }
 
   // ============================================

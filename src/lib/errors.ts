@@ -10,6 +10,9 @@
  * Format: CATEGORY_CODE (e.g., AME_101)
  */
 export enum SpliceErrorCode {
+  // General Errors (0xx)
+  OPERATION_IN_PROGRESS = 'GEN_001',
+
   // AME Export Errors (1xx)
   AME_NOT_AVAILABLE = 'AME_101',
   AME_PRESET_NOT_FOUND = 'AME_102',
@@ -68,6 +71,10 @@ export enum SpliceErrorCode {
  * These are actionable and help users understand what went wrong.
  */
 export const USER_MESSAGES: Record<SpliceErrorCode, string> = {
+  // General
+  [SpliceErrorCode.OPERATION_IN_PROGRESS]:
+    'Another operation is already in progress. Please wait for it to complete.',
+
   // AME Export
   [SpliceErrorCode.AME_NOT_AVAILABLE]:
     'Adobe Media Encoder is not available. Please ensure it is installed and Premiere Pro is up to date.',

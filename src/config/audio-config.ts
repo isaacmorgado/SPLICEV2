@@ -3,6 +3,11 @@
  *
  * Centralized configuration for audio extraction, chunking, and export settings.
  * These values can be adjusted based on performance requirements or API limits.
+ *
+ * Performance features:
+ * - Caching configuration for transcription and voice isolation
+ * - Memory limits to prevent exhaustion in long sessions
+ * - TTL settings for cache entries
  */
 
 export const AUDIO_CONFIG = {
@@ -100,6 +105,80 @@ export const AUDIO_CONFIG = {
    * Used for validation.
    */
   MAX_CHANNELS: 8,
+
+  // ============================================
+  // Cache Configuration
+  // ============================================
+
+  /**
+   * Maximum number of transcription results to cache.
+   * Each entry contains text and segment data.
+   */
+  CACHE_TRANSCRIPTION_MAX_ENTRIES: 30,
+
+  /**
+   * Maximum memory for transcription cache in bytes.
+   * Approximately 50MB to store ~30 medium-length transcriptions.
+   */
+  CACHE_TRANSCRIPTION_MAX_SIZE: 50 * 1024 * 1024,
+
+  /**
+   * TTL for transcription cache entries in milliseconds.
+   * 2 hours - transcriptions rarely change for same audio.
+   */
+  CACHE_TRANSCRIPTION_TTL: 7200000,
+
+  /**
+   * Maximum number of voice isolation results to cache.
+   * Fewer entries because isolated audio buffers are large.
+   */
+  CACHE_VOICE_ISOLATION_MAX_ENTRIES: 10,
+
+  /**
+   * Maximum memory for voice isolation cache in bytes.
+   * 200MB to store ~10 isolated audio results.
+   */
+  CACHE_VOICE_ISOLATION_MAX_SIZE: 200 * 1024 * 1024,
+
+  /**
+   * TTL for voice isolation cache entries in milliseconds.
+   * 1 hour - these are CPU/API intensive so cache longer.
+   */
+  CACHE_VOICE_ISOLATION_TTL: 3600000,
+
+  /**
+   * Enable automatic cache pruning.
+   * Removes expired entries periodically.
+   */
+  CACHE_AUTO_PRUNE: true,
+
+  /**
+   * Interval for automatic cache pruning in milliseconds.
+   * Every 5 minutes.
+   */
+  CACHE_PRUNE_INTERVAL: 300000,
+
+  // ============================================
+  // Performance Metrics
+  // ============================================
+
+  /**
+   * Enable performance metrics tracking.
+   * Set to false in production if overhead is a concern.
+   */
+  METRICS_ENABLED: true,
+
+  /**
+   * Log performance reports automatically.
+   * Useful for debugging slow operations.
+   */
+  METRICS_AUTO_LOG: false,
+
+  /**
+   * Interval for auto-logging metrics in milliseconds.
+   * Every 10 minutes.
+   */
+  METRICS_LOG_INTERVAL: 600000,
 } as const;
 
 // Type for the config values

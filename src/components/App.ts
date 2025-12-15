@@ -2,6 +2,7 @@ import { PremiereAPI } from '../api/premiere';
 import { AIServices, aiServices } from '../api/ai-services';
 import { subscriptionService } from '../services/subscription';
 import { takeDetector } from '../services/take-detector';
+import { exportPresetsService } from '../services/export-presets';
 import { serviceStatus } from '../services/service-status';
 import { secureStorage } from '../lib/secure-storage';
 import { logger, LogLevel } from '../lib/logger';
@@ -25,10 +26,14 @@ interface AppState {
   useVoiceIsolation: boolean;
   silentSections: number;
   timeToRemove: number;
+  selectedPresetId: string | null;
+  availablePresets: SilenceDetectionPreset[];
   // Takes tab state
   transcript: string;
   takes: NormalizedTake[];
   takeGroups: TakeGroup[];
+  takeSelectionStrategy: TakeSelectionStrategy;
+  takePreview: TakePreview | null;
   // Settings tab state
   tier: TierId;
   minutesUsed: number;
@@ -66,9 +71,13 @@ export class App {
       useVoiceIsolation: false,
       silentSections: 0,
       timeToRemove: 0,
+      selectedPresetId: null,
+      availablePresets: [],
       transcript: '',
       takes: [],
       takeGroups: [],
+      takeSelectionStrategy: 'best_only',
+      takePreview: null,
       tier: 'free',
       minutesUsed: 0,
       minutesLimit: 10,
@@ -85,6 +94,7 @@ export class App {
 
     await this.loadProjectInfo();
     await this.loadSubscriptionInfo();
+    await this.loadPresets();
     this.render();
 
     // Subscribe to service status changes
@@ -345,6 +355,26 @@ export class App {
   private renderSilenceTab(): string {
     return `
       <div class="silence-tab" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Preset Selection -->
+        <section class="preset-selection" style="display: flex; flex-direction: column; gap: 8px;">
+          <label style="font-size: 11px; color: var(--spectrum-global-color-gray-400);">PRESET</label>
+          <select
+            id="preset-selector"
+            style="width: 100%; padding: 6px; background: var(--spectrum-global-color-gray-200); border: 1px solid var(--spectrum-global-color-gray-300); border-radius: 4px; color: var(--spectrum-global-color-gray-50);"
+          >
+            <option value="">Custom Settings</option>
+            ${this.state.availablePresets
+              .map(
+                (preset) => `
+              <option value="${preset.id}" ${this.state.selectedPresetId === preset.id ? 'selected' : ''}>
+                ${preset.name}${preset.description ? ` - ${preset.description}` : ''}
+              </option>
+            `
+              )
+              .join('')}
+          </select>
+        </section>
+
         <!-- Settings -->
         <section class="silence-settings" style="display: flex; flex-direction: column; gap: 12px;">
           <div>
@@ -374,6 +404,12 @@ export class App {
             <label for="voice-isolation" style="font-size: 12px; color: var(--spectrum-global-color-gray-300);">
               Use voice isolation (slower, more accurate)
             </label>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <sp-button variant="secondary" id="btn-save-preset" size="s" style="flex: 1;">
+              Save as Preset
+            </sp-button>
           </div>
         </section>
 
@@ -452,6 +488,7 @@ export class App {
               Analyze Takes
             </sp-button>
 
+            ${this.state.takeGroups.length > 0 ? this.renderTakeSelectionControls() : ''}
             ${this.state.takeGroups.length > 0 ? this.renderTakeGroups() : ''}
           </section>
         `
@@ -463,6 +500,7 @@ export class App {
           this.state.takeGroups.length > 0
             ? `
           <section class="take-actions" style="display: flex; flex-direction: column; gap: 8px;">
+            ${this.state.takePreview ? this.renderTakePreview() : ''}
             <sp-button variant="cta" id="btn-apply-takes" ${this.state.isProcessing ? 'disabled' : ''}>
               Apply Takes to Timeline (${this.getTotalTakesCount()} takes)
             </sp-button>
@@ -547,6 +585,71 @@ export class App {
 
   private getTotalTakesCount(): number {
     return this.state.takeGroups.reduce((sum, g) => sum + g.takes.length, 0);
+  }
+
+  private renderTakeSelectionControls(): string {
+    return `
+      <div style="background: var(--spectrum-global-color-gray-200); padding: 12px; border-radius: 4px; margin-top: 8px;">
+        <div style="font-size: 11px; color: var(--spectrum-global-color-gray-500); margin-bottom: 8px;">SELECTION STRATEGY</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <sp-action-button
+            id="strategy-best-only"
+            size="s"
+            ${this.state.takeSelectionStrategy === 'best_only' ? 'selected' : ''}
+            style="flex: 1;"
+          >
+            Best Only
+          </sp-action-button>
+          <sp-action-button
+            id="strategy-all-takes"
+            size="s"
+            ${this.state.takeSelectionStrategy === 'all_takes' ? 'selected' : ''}
+            style="flex: 1;"
+          >
+            All Takes
+          </sp-action-button>
+          <sp-action-button
+            id="strategy-manual"
+            size="s"
+            ${this.state.takeSelectionStrategy === 'manual' ? 'selected' : ''}
+            style="flex: 1;"
+          >
+            Manual
+          </sp-action-button>
+        </div>
+        <sp-button variant="secondary" id="btn-preview-takes" size="s" style="width: 100%;">
+          Preview Selection
+        </sp-button>
+      </div>
+    `;
+  }
+
+  private renderTakePreview(): string {
+    if (!this.state.takePreview) return '';
+
+    const preview = this.state.takePreview;
+    const keepPercent = (preview.keepDuration / preview.totalDuration) * 100;
+    const removePercent = (preview.removeDuration / preview.totalDuration) * 100;
+
+    return `
+      <div style="background: var(--spectrum-global-color-gray-200); padding: 12px; border-radius: 4px; margin-bottom: 8px;">
+        <div style="font-size: 11px; color: var(--spectrum-global-color-gray-500); margin-bottom: 8px;">PREVIEW</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+          <div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--spectrum-global-color-blue-500);">${preview.totalDuration.toFixed(1)}s</div>
+            <div style="font-size: 10px; color: var(--spectrum-global-color-gray-500);">Total</div>
+          </div>
+          <div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--spectrum-global-color-green-500);">${preview.keepDuration.toFixed(1)}s</div>
+            <div style="font-size: 10px; color: var(--spectrum-global-color-gray-500);">Keep (${keepPercent.toFixed(0)}%)</div>
+          </div>
+          <div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--spectrum-global-color-red-500);">${preview.removeDuration.toFixed(1)}s</div>
+            <div style="font-size: 10px; color: var(--spectrum-global-color-gray-500);">Remove (${removePercent.toFixed(0)}%)</div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   private renderSettingsTab(): string {
@@ -746,20 +849,42 @@ export class App {
       ?.addEventListener('click', () => this.handleQuickSilence());
 
     // Silence tab
+    this.container.querySelector('#preset-selector')?.addEventListener('change', (e) => {
+      this.handlePresetChange((e.target as HTMLSelectElement).value);
+    });
     this.container.querySelector('#silence-threshold')?.addEventListener('input', (e) => {
       this.state.silenceThreshold = parseInt((e.target as HTMLInputElement).value);
+      this.state.selectedPresetId = null; // Clear preset when manually adjusting
       const label = this.container.querySelector('label[for="silence-threshold"]');
       if (label) label.textContent = `Silence Threshold: ${this.state.silenceThreshold} dB`;
     });
     this.container.querySelector('#voice-isolation')?.addEventListener('change', (e) => {
       this.state.useVoiceIsolation = (e.target as HTMLInputElement).checked;
+      this.state.selectedPresetId = null; // Clear preset when manually adjusting
     });
+    this.container
+      .querySelector('#btn-save-preset')
+      ?.addEventListener('click', () => this.handleSavePreset());
     this.container
       .querySelector('#btn-detect-silence')
       ?.addEventListener('click', () => this.handleDetectSilence());
     this.container
       .querySelector('#btn-apply-cuts')
       ?.addEventListener('click', () => this.handleApplyCuts());
+
+    // Takes tab - Strategy selection
+    this.container
+      .querySelector('#strategy-best-only')
+      ?.addEventListener('click', () => this.handleStrategyChange('best_only'));
+    this.container
+      .querySelector('#strategy-all-takes')
+      ?.addEventListener('click', () => this.handleStrategyChange('all_takes'));
+    this.container
+      .querySelector('#strategy-manual')
+      ?.addEventListener('click', () => this.handleStrategyChange('manual'));
+    this.container
+      .querySelector('#btn-preview-takes')
+      ?.addEventListener('click', () => this.handlePreviewTakes());
 
     // Takes tab
     this.container
@@ -1153,6 +1278,92 @@ export class App {
         this.state.subscriptionStatus = 'active';
       }
     }
+  }
+
+  private async loadPresets(): Promise<void> {
+    try {
+      const result = await exportPresetsService.loadPresets();
+      if (result.success) {
+        this.state.availablePresets = result.presets;
+        logger.info(`Loaded ${result.presets.length} presets`);
+      } else {
+        logger.error('Failed to load presets', result.error);
+        this.state.availablePresets = [];
+      }
+    } catch (error) {
+      logger.error('Failed to load presets', error);
+      this.state.availablePresets = [];
+    }
+  }
+
+  private async handlePresetChange(presetId: string): Promise<void> {
+    if (!presetId) {
+      // Custom settings selected
+      this.state.selectedPresetId = null;
+      return;
+    }
+
+    const preset = this.state.availablePresets.find((p) => p.id === presetId);
+    if (!preset) {
+      logger.warn(`Preset not found: ${presetId}`);
+      return;
+    }
+
+    // Apply preset settings
+    this.state.selectedPresetId = presetId;
+    this.state.silenceThreshold = preset.threshold;
+    this.state.useVoiceIsolation = preset.useVoiceIsolation;
+    this.setStatus(`Applied preset: ${preset.name}`);
+    this.render();
+  }
+
+  private async handleSavePreset(): Promise<void> {
+    // Prompt for preset name
+    const name = prompt('Enter preset name:');
+    if (!name) return;
+
+    const description = prompt('Enter description (optional):');
+
+    const result = await exportPresetsService.savePreset({
+      name,
+      description: description || undefined,
+      threshold: this.state.silenceThreshold,
+      minSilenceDuration: 0.5, // Default value
+      padding: 0.15, // Default value
+      useVoiceIsolation: this.state.useVoiceIsolation,
+    });
+
+    if (result.success && result.preset) {
+      this.state.availablePresets.push(result.preset);
+      this.state.selectedPresetId = result.preset.id;
+      this.setStatus(`Saved preset: ${result.preset.name}`);
+      this.render();
+    } else {
+      this.setStatus(`Failed to save preset: ${result.error}`);
+    }
+  }
+
+  private handleStrategyChange(strategy: TakeSelectionStrategy): void {
+    this.state.takeSelectionStrategy = strategy;
+    takeDetector.setSelectionStrategy(strategy);
+
+    // Re-detect takes with new strategy
+    if (this.state.transcript) {
+      this.handleAnalyzeTakes();
+    } else {
+      this.render();
+    }
+  }
+
+  private handlePreviewTakes(): void {
+    if (this.state.takeGroups.length === 0) {
+      this.setStatus('No takes to preview');
+      return;
+    }
+
+    this.state.takePreview = takeDetector.generatePreview(this.state.takeGroups);
+    this.setStatus('Preview generated');
+    this.render();
   }
 
   private startSubscriptionPolling(): void {

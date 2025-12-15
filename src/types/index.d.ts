@@ -390,6 +390,8 @@ interface NormalizedTake {
   score: number;
   colorIndex: number;
   clipName: string;
+  confidence: TakeConfidenceScores;
+  selected?: boolean;
 }
 
 /** A group of takes for the same phrase */
@@ -414,6 +416,104 @@ interface TakeDetectorConfig {
   colorRotation: number[];
   clipNameFormat: string;
   phrasePreviewLength: number;
+}
+
+/** Take selection strategy */
+type TakeSelectionStrategy = 'best_only' | 'all_takes' | 'manual';
+
+/** Confidence scores for take boundaries */
+interface TakeConfidenceScores {
+  boundaryAccuracy: number; // 0-1, how accurate the start/end boundaries are
+  textMatch: number; // 0-1, how well the text matches other takes in group
+  audioQuality: number; // 0-1, estimated audio quality
+  overall: number; // 0-1, combined confidence score
+}
+
+/** Enhanced normalized take with confidence scores */
+interface NormalizedTakeWithConfidence extends NormalizedTake {
+  confidence: TakeConfidenceScores;
+  selected?: boolean; // For manual selection
+}
+
+/** Take preview data showing what will be kept/removed */
+interface TakePreview {
+  totalDuration: number;
+  keepDuration: number;
+  removeDuration: number;
+  takeGroups: Array<{
+    groupId: string;
+    phrase: string;
+    selectedTakes: number[]; // Indices of takes to keep
+    removedTakes: number[]; // Indices of takes to remove
+  }>;
+}
+
+// ============================================
+// Export Presets Types
+// ============================================
+
+/** Silence detection settings preset */
+interface SilenceDetectionPreset {
+  id: string;
+  name: string;
+  description?: string;
+  threshold: number; // dB threshold (-60 to -20)
+  minSilenceDuration: number; // seconds
+  padding: number; // seconds to keep before/after speech
+  useVoiceIsolation: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Export preset manager result types */
+interface SavePresetResult {
+  success: boolean;
+  preset?: SilenceDetectionPreset;
+  error?: string;
+}
+
+interface LoadPresetsResult {
+  success: boolean;
+  presets: SilenceDetectionPreset[];
+  error?: string;
+}
+
+// ============================================
+// Batch Processing Types
+// ============================================
+
+/** Batch processing job status */
+type BatchJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'paused';
+
+/** Batch processing job */
+interface BatchJob {
+  id: string;
+  sequenceId: string;
+  sequenceName: string;
+  status: BatchJobStatus;
+  progress: number; // 0-100
+  error?: string;
+  startedAt?: Date;
+  completedAt?: Date;
+}
+
+/** Batch processor options */
+interface BatchProcessorOptions {
+  silenceThreshold?: number;
+  useVoiceIsolation?: boolean;
+  preset?: SilenceDetectionPreset;
+  onProgress?: (job: BatchJob) => void;
+  onComplete?: (job: BatchJob) => void;
+  onError?: (job: BatchJob, error: Error) => void;
+}
+
+/** Batch processing result */
+interface BatchProcessingResult {
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  jobs: BatchJob[];
+  errors: Array<{ jobId: string; error: string }>;
 }
 
 // ============================================
