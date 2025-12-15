@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth';
-import { getSubscriptionByUserId } from '../lib/db';
+import { getSubscriptionByUserId } from '../db';
 import { createCheckoutSession, TIERS, createCustomer } from '../lib/stripe';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth';
-import { getUsageRecords } from '../lib/db';
+import { getUsageRecords } from '../db';
 import { checkUsage } from '../lib/usage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

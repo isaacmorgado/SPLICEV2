@@ -1,4 +1,4 @@
-import { getSubscriptionByUserId, getSql, transaction } from './db';
+import { getSubscriptionByUserId, getSql, transaction } from '../db';
 import { TIERS } from './stripe';
 
 export type Feature = 'voice_isolation' | 'transcription' | 'take_analysis';

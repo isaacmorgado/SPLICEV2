@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth';
-import { getSubscriptionByUserId } from '../lib/db';
+import { getSubscriptionByUserId } from '../db';
 import { checkCancellationEligibility } from '../lib/cancellation';
 import { stripe } from '../lib/stripe';
 

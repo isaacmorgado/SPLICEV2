@@ -8,7 +8,7 @@
  * you should pay for it.
  */
 
-import { getSubscriptionByUserId } from './db';
+import { getSubscriptionByUserId } from '../db';
 import { TIERS } from './stripe';
 
 // Minimum usage percentage that blocks cancellation
