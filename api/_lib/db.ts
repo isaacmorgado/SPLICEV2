@@ -3,9 +3,29 @@ import { neon, neonConfig, NeonQueryFunction } from '@neondatabase/serverless';
 // Enable connection pooling for better performance
 neonConfig.fetchConnectionCache = true;
 
-const sql = neon(process.env.DATABASE_URL!);
+// Initialize sql lazily to handle env vars not being available at import time
+let _sqlInstance: NeonQueryFunction<false, false> | null = null;
 
-export { sql };
+function getDbUrl(): string {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error('DATABASE_URL environment variable is not set');
+  }
+  return url;
+}
+
+// Create a lazy-initialized sql function that works as a tagged template
+function createLazySql() {
+  const sqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (!_sqlInstance) {
+      _sqlInstance = neon(getDbUrl());
+    }
+    return _sqlInstance(strings, ...values);
+  };
+  return sqlFn as NeonQueryFunction<false, false>;
+}
+
+export const sql = createLazySql();
 
 // Type for the SQL query function
 type SqlQueryFunction = NeonQueryFunction<false, false>;
@@ -19,7 +39,7 @@ export async function transaction<T>(
 ): Promise<T> {
   // Neon supports transactions via BEGIN/COMMIT
   // For simple cases, we can use a single connection
-  const txSql = neon(process.env.DATABASE_URL!);
+  const txSql = neon(getDbUrl());
 
   try {
     await txSql`BEGIN`;
