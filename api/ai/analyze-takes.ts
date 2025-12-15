@@ -1,6 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
 
 type LLMProvider = 'openai' | 'gemini';
 
@@ -48,6 +46,13 @@ Return your analysis as JSON in this exact format:
 Only include phrases that are clearly repeated takes, not just similar words. Be conservative with confidence scores.`;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const usage = await import('../../lib/usage.js');
+
+  const { authenticateRequest } = auth;
+  const { hasEnoughMinutes, trackUsage, estimateMinutes } = usage;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

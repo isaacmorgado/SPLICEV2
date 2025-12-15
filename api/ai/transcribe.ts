@@ -1,7 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
-import { transcribeWithGroq } from '../lib/groq';
 
 // Fallback to OpenAI if user provides their own API key
 const OPENAI_WHISPER_URL = 'https://api.openai.com/v1/audio/transcriptions';
@@ -19,6 +16,15 @@ export interface TranscriptionResult {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const usage = await import('../../lib/usage.js');
+  const groq = await import('../../lib/groq.js');
+
+  const { authenticateRequest } = auth;
+  const { hasEnoughMinutes, trackUsage, estimateMinutes } = usage;
+  const { transcribeWithGroq } = groq;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

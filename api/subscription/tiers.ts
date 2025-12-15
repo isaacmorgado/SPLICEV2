@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { TIERS } from '../lib/stripe';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const stripeLib = await import('../../lib/stripe.js');
+  const { TIERS } = stripeLib;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

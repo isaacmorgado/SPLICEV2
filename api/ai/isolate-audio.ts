@@ -1,7 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../lib/usage';
-import { isolateVoiceWithDemucs } from '../lib/voice-isolation';
 
 // Use global fetch types for Node.js 18+
 declare const fetch: typeof globalThis.fetch;
@@ -10,6 +7,15 @@ declare const fetch: typeof globalThis.fetch;
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/audio-isolation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const usage = await import('../../lib/usage.js');
+  const voiceIsolation = await import('../../lib/voice-isolation.js');
+
+  const { authenticateRequest } = auth;
+  const { hasEnoughMinutes, trackUsage, estimateMinutes } = usage;
+  const { isolateVoiceWithDemucs } = voiceIsolation;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
