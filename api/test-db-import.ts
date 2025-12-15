@@ -1,5 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSql } from './lib/db';
+
+// Inline getSql to test if the pattern works when not importing from lib/db
+type SqlFunction = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+
+let _sql: SqlFunction | null = null;
+
+async function getSql(): Promise<SqlFunction> {
+  if (!_sql) {
+    const { neon } = await import('@neondatabase/serverless');
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    _sql = neon(url) as unknown as SqlFunction;
+  }
+  return _sql;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -7,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await sql`SELECT 1 as check`;
     res.status(200).json({
       success: true,
-      message: 'Database connection works!',
+      message: 'Inline getSql pattern works!',
       result,
     });
   } catch (error) {
