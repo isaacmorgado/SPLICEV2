@@ -1,12 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { hello } from './_db-minimal';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const message = hello();
     res.status(200).json({
       success: true,
-      message,
+      message: 'No local imports, just a simple response',
     });
   } catch (error) {
     res.status(500).json({
