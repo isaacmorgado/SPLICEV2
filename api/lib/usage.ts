@@ -1,4 +1,4 @@
-import { getSubscriptionByUserId, sql, transaction } from './db';
+import { getSubscriptionByUserId, getSql, transaction } from './db';
 import { TIERS } from './stripe';
 
 export type Feature = 'voice_isolation' | 'transcription' | 'take_analysis';
@@ -11,8 +11,13 @@ export interface UsageCheckResult {
   tier: string;
 }
 
+interface SubscriptionRow {
+  tier: string;
+  minutes_used: number;
+}
+
 export async function checkUsage(userId: string): Promise<UsageCheckResult> {
-  const subscription = await getSubscriptionByUserId(userId);
+  const subscription = (await getSubscriptionByUserId(userId)) as SubscriptionRow | null;
 
   if (!subscription) {
     return {
@@ -24,7 +29,7 @@ export async function checkUsage(userId: string): Promise<UsageCheckResult> {
     };
   }
 
-  const tier = TIERS[subscription.tier] || TIERS.free;
+  const tier = TIERS[subscription.tier as keyof typeof TIERS] || TIERS.free;
   const used = subscription.minutes_used || 0;
   const remaining = Math.max(0, tier.monthlyMinutes - used);
 
@@ -73,6 +78,8 @@ export async function trackUsageLegacy(
   feature: Feature,
   minutes: number
 ): Promise<UsageCheckResult> {
+  const sql = await getSql();
+
   // Record the usage
   await sql`
     INSERT INTO usage_records (user_id, feature, minutes)

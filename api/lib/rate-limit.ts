@@ -1,4 +1,4 @@
-import { sql } from './db';
+import { getSql } from './db';
 
 /**
  * Rate Limiter for Vercel Serverless Functions
@@ -60,6 +60,8 @@ export async function checkRateLimit(
   const windowStart = new Date(now.getTime() - config.windowSeconds * 1000);
 
   try {
+    const sql = await getSql();
+
     // Clean up old entries and count recent requests in one query
     const result = await sql`
       WITH cleanup AS (
@@ -74,7 +76,8 @@ export async function checkRateLimit(
       SELECT count FROM recent
     `;
 
-    const currentCount = parseInt(result[0]?.count || '0', 10);
+    const countRow = result[0] as { count: string } | undefined;
+    const currentCount = parseInt(countRow?.count || '0', 10);
     const resetAt = new Date(now.getTime() + config.windowSeconds * 1000);
 
     if (currentCount >= config.maxRequests) {
@@ -86,9 +89,10 @@ export async function checkRateLimit(
         LIMIT 1
       `;
 
-      const retryAfter = oldestEntry[0]
+      const oldestRow = oldestEntry[0] as { created_at: string } | undefined;
+      const retryAfter = oldestRow
         ? Math.ceil(
-            (new Date(oldestEntry[0].created_at).getTime() +
+            (new Date(oldestRow.created_at).getTime() +
               config.windowSeconds * 1000 -
               now.getTime()) /
               1000
@@ -174,6 +178,7 @@ export interface LockoutResult {
  */
 export async function checkAccountLockout(email: string): Promise<LockoutResult> {
   try {
+    const sql = await getSql();
     const result = await sql`
       SELECT failed_attempts, locked_until
       FROM account_lockouts
@@ -184,7 +189,8 @@ export async function checkAccountLockout(email: string): Promise<LockoutResult>
       return { locked: false, failedAttempts: 0 };
     }
 
-    const { failed_attempts, locked_until } = result[0];
+    const row = result[0] as { failed_attempts: number; locked_until: string | null };
+    const { failed_attempts, locked_until } = row;
     const now = new Date();
 
     if (locked_until && new Date(locked_until) > now) {
@@ -220,6 +226,8 @@ export async function recordFailedLogin(email: string): Promise<LockoutResult> {
   const now = new Date();
 
   try {
+    const sql = await getSql();
+
     // Upsert failed attempt
     const result = await sql`
       INSERT INTO account_lockouts (email, failed_attempts, last_attempt)
@@ -231,7 +239,8 @@ export async function recordFailedLogin(email: string): Promise<LockoutResult> {
       RETURNING failed_attempts
     `;
 
-    const failedAttempts = result[0]?.failed_attempts || 1;
+    const row = result[0] as { failed_attempts: number } | undefined;
+    const failedAttempts = row?.failed_attempts || 1;
 
     // Check if we need to lock the account
     if (failedAttempts >= LOCKOUT_CONFIG.maxFailedAttempts) {
@@ -262,6 +271,7 @@ export async function recordFailedLogin(email: string): Promise<LockoutResult> {
  */
 export async function clearFailedLogins(email: string): Promise<void> {
   try {
+    const sql = await getSql();
     await sql`
       DELETE FROM account_lockouts
       WHERE email = ${email.toLowerCase()}

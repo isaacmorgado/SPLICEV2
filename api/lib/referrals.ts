@@ -7,7 +7,7 @@
  * - Limit: 10 redemptions per code
  */
 
-import { sql } from './db';
+import { getSql } from './db';
 import crypto from 'crypto';
 
 export interface ReferralCode {
@@ -25,11 +25,21 @@ export interface ReferralStats {
   bonusMonthsEarned: number;
 }
 
+interface ReferralCodeRow {
+  id: string;
+  code: string;
+  owner_user_id: string;
+  uses_remaining: number;
+  created_at: Date;
+}
+
 /**
  * Generate a unique referral code for a user
  * Returns existing code if user already has one
  */
 export async function generateReferralCode(userId: string): Promise<ReferralCode> {
+  const sql = await getSql();
+
   // Check if user already has a code
   const existing = await sql`
     SELECT id, code, owner_user_id, uses_remaining, created_at
@@ -38,12 +48,13 @@ export async function generateReferralCode(userId: string): Promise<ReferralCode
   `;
 
   if (existing.length > 0) {
+    const row = existing[0] as ReferralCodeRow;
     return {
-      id: existing[0].id,
-      code: existing[0].code,
-      ownerUserId: existing[0].owner_user_id,
-      usesRemaining: existing[0].uses_remaining,
-      createdAt: existing[0].created_at,
+      id: row.id,
+      code: row.code,
+      ownerUserId: row.owner_user_id,
+      usesRemaining: row.uses_remaining,
+      createdAt: row.created_at,
     };
   }
 
@@ -56,12 +67,13 @@ export async function generateReferralCode(userId: string): Promise<ReferralCode
     RETURNING id, code, owner_user_id, uses_remaining, created_at
   `;
 
+  const row = rows[0] as ReferralCodeRow;
   return {
-    id: rows[0].id,
-    code: rows[0].code,
-    ownerUserId: rows[0].owner_user_id,
-    usesRemaining: rows[0].uses_remaining,
-    createdAt: rows[0].created_at,
+    id: row.id,
+    code: row.code,
+    ownerUserId: row.owner_user_id,
+    usesRemaining: row.uses_remaining,
+    createdAt: row.created_at,
   };
 }
 
@@ -72,6 +84,7 @@ export async function generateReferralCode(userId: string): Promise<ReferralCode
 export async function validateReferralCode(
   code: string
 ): Promise<{ valid: boolean; codeId?: string; ownerUserId?: string; error?: string }> {
+  const sql = await getSql();
   const rows = await sql`
     SELECT id, owner_user_id, uses_remaining
     FROM referral_codes
@@ -82,14 +95,16 @@ export async function validateReferralCode(
     return { valid: false, error: 'Invalid referral code' };
   }
 
-  if (rows[0].uses_remaining <= 0) {
+  const row = rows[0] as { id: string; owner_user_id: string; uses_remaining: number };
+
+  if (row.uses_remaining <= 0) {
     return { valid: false, error: 'Referral code has been fully used' };
   }
 
   return {
     valid: true,
-    codeId: rows[0].id,
-    ownerUserId: rows[0].owner_user_id,
+    codeId: row.id,
+    ownerUserId: row.owner_user_id,
   };
 }
 
@@ -115,6 +130,8 @@ export async function redeemReferralCode(
   if (ownerUserId === newUserId) {
     return { success: false, error: 'Cannot use your own referral code' };
   }
+
+  const sql = await getSql();
 
   // Check if user already used a referral code
   const existingRedemption = await sql`
@@ -165,6 +182,8 @@ export async function redeemReferralCode(
  * Get referral stats for a user
  */
 export async function getReferralStats(userId: string): Promise<ReferralStats> {
+  const sql = await getSql();
+
   // Get user's referral code
   const codeRows = await sql`
     SELECT code, uses_remaining
@@ -186,11 +205,15 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
     WHERE user_id = ${userId}
   `;
 
+  const codeRow = codeRows[0] as { code: string; uses_remaining: number } | undefined;
+  const redemptionRow = redemptionRows[0] as { count: string } | undefined;
+  const bonusRow = bonusRows[0] as { bonus_months: number } | undefined;
+
   return {
-    code: codeRows.length > 0 ? codeRows[0].code : null,
-    totalRedemptions: parseInt(redemptionRows[0]?.count || '0', 10),
-    usesRemaining: codeRows.length > 0 ? codeRows[0].uses_remaining : 0,
-    bonusMonthsEarned: bonusRows.length > 0 ? bonusRows[0].bonus_months : 0,
+    code: codeRow?.code ?? null,
+    totalRedemptions: parseInt(redemptionRow?.count || '0', 10),
+    usesRemaining: codeRow?.uses_remaining ?? 0,
+    bonusMonthsEarned: bonusRow?.bonus_months ?? 0,
   };
 }
 
@@ -198,13 +221,15 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
  * Check if a user has referral months remaining (for Stripe pricing)
  */
 export async function hasReferralPricing(userId: string): Promise<boolean> {
+  const sql = await getSql();
   const rows = await sql`
     SELECT referral_months_remaining
     FROM subscriptions
     WHERE user_id = ${userId}
   `;
 
-  return rows.length > 0 && rows[0].referral_months_remaining > 0;
+  const row = rows[0] as { referral_months_remaining: number } | undefined;
+  return row !== undefined && row.referral_months_remaining > 0;
 }
 
 /**
@@ -212,6 +237,7 @@ export async function hasReferralPricing(userId: string): Promise<boolean> {
  * Returns true if user should be upgraded to regular price
  */
 export async function decrementReferralMonths(userId: string): Promise<boolean> {
+  const sql = await getSql();
   const rows = await sql`
     UPDATE subscriptions
     SET referral_months_remaining = GREATEST(0, referral_months_remaining - 1)
@@ -219,8 +245,9 @@ export async function decrementReferralMonths(userId: string): Promise<boolean> 
     RETURNING referral_months_remaining
   `;
 
+  const row = rows[0] as { referral_months_remaining: number } | undefined;
   // If now at 0, user should be upgraded to regular price
-  return rows.length > 0 && rows[0].referral_months_remaining === 0;
+  return row !== undefined && row.referral_months_remaining === 0;
 }
 
 /**

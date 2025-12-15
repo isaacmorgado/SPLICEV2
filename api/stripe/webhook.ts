@@ -6,7 +6,7 @@ import {
   stripe,
   TIERS,
 } from '../lib/stripe';
-import { updateSubscription, sql, transaction } from '../lib/db';
+import { updateSubscription, getSql, transaction } from '../lib/db';
 import { decrementReferralMonths } from '../lib/referrals';
 import type Stripe from 'stripe';
 
@@ -30,6 +30,7 @@ async function buffer(readable: VercelRequest): Promise<Buffer> {
  * @returns true if event was already processed, false otherwise
  */
 async function isEventProcessed(eventId: string): Promise<boolean> {
+  const sql = await getSql();
   const result = await sql`
     SELECT event_id FROM processed_webhook_events
     WHERE event_id = ${eventId}
@@ -41,6 +42,7 @@ async function isEventProcessed(eventId: string): Promise<boolean> {
  * Mark a webhook event as processed
  */
 async function markEventProcessed(eventId: string, eventType: string): Promise<void> {
+  const sql = await getSql();
   await sql`
     INSERT INTO processed_webhook_events (event_id, event_type)
     VALUES (${eventId}, ${eventType})
@@ -137,6 +139,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const tier = getTierByPriceId(priceId);
 
   // Find user by Stripe customer ID
+  const sql = await getSql();
   const users = await sql`
     SELECT user_id FROM subscriptions
     WHERE stripe_customer_id = ${customerId}
@@ -147,7 +150,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return;
   }
 
-  const userId = users[0].user_id;
+  const userId = (users[0] as { user_id: string }).user_id;
 
   // Update subscription
   await updateSubscription(userId, {
@@ -166,6 +169,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   const tier = getTierByPriceId(priceId);
 
   // Find user by Stripe customer ID
+  const sql = await getSql();
   const users = await sql`
     SELECT user_id FROM subscriptions
     WHERE stripe_customer_id = ${customerId}
@@ -176,7 +180,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     return;
   }
 
-  const userId = users[0].user_id;
+  const userId = (users[0] as { user_id: string }).user_id;
 
   // Map Stripe status to our status
   let status: string;
@@ -209,6 +213,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;
 
   // Find user by Stripe customer ID
+  const sql = await getSql();
   const users = await sql`
     SELECT user_id FROM subscriptions
     WHERE stripe_customer_id = ${customerId}
@@ -219,7 +224,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     return;
   }
 
-  const userId = users[0].user_id;
+  const userId = (users[0] as { user_id: string }).user_id;
 
   // Downgrade to free tier
   await updateSubscription(userId, {
@@ -243,6 +248,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   // Find user by Stripe customer ID
+  const sql = await getSql();
   const users = await sql`
     SELECT user_id, period_end, referral_months_remaining, stripe_subscription_id
     FROM subscriptions
@@ -254,9 +260,14 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     return;
   }
 
-  const userId = users[0].user_id;
-  const stripeSubId = users[0].stripe_subscription_id;
-  const currentPeriodEnd = users[0].period_end ? new Date(users[0].period_end) : null;
+  const user = users[0] as {
+    user_id: string;
+    stripe_subscription_id: string | null;
+    period_end: string | null;
+  };
+  const userId = user.user_id;
+  const stripeSubId = user.stripe_subscription_id;
+  const currentPeriodEnd = user.period_end ? new Date(user.period_end) : null;
   const invoicePeriodEnd = invoice.lines.data[0]?.period?.end
     ? new Date(invoice.lines.data[0].period.end * 1000)
     : null;
@@ -324,6 +335,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const customerId = invoice.customer as string;
 
   // Find user by Stripe customer ID
+  const sql = await getSql();
   const users = await sql`
     SELECT user_id FROM subscriptions
     WHERE stripe_customer_id = ${customerId}
@@ -334,7 +346,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     return;
   }
 
-  const userId = users[0].user_id;
+  const userId = (users[0] as { user_id: string }).user_id;
 
   // Mark subscription as past_due
   await updateSubscription(userId, {
