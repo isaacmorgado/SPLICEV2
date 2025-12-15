@@ -31,7 +31,9 @@
   "license": "MIT",
   "devDependencies": {
     "@adobe/cc-ext-uxp-types": "^7.3.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
+    "@vercel/node": "^4.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
@@ -44,12 +46,16 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^0.10.0",
     "@spectrum-web-components/theme": "^1.10.0",
     "@spectrum-web-components/styles": "^1.10.0",
     "@spectrum-web-components/button": "^1.10.0",
     "@spectrum-web-components/textfield": "^1.10.0",
     "@spectrum-web-components/action-button": "^1.10.0",
-    "@spectrum-web-components/icons-workflow": "^1.10.0"
+    "@spectrum-web-components/icons-workflow": "^1.10.0",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.0",
+    "stripe": "^17.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

@@ -70,6 +70,10 @@
     "webview": {
       "allow": "yes",
       "domains": ["https://*"]
+    },
+    "launchProcess": {
+      "schemes": ["https", "http"],
+      "extensions": []
     }
   },
   "experimentalApis": {

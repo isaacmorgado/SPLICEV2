@@ -41,6 +41,8 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...tseslint.configs.recommended.rules,
+      // Disable no-undef for TypeScript - TS compiler handles this better
+      'no-undef': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/explicit-function-return-type': 'off',

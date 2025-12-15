@@ -5,12 +5,14 @@ describe('AIServices', () => {
   let services: AIServices;
 
   beforeEach(() => {
+    // AIServices now uses default backendClient
     services = new AIServices();
   });
 
   describe('colorMatch', () => {
     it('returns color match result with mock data', async () => {
-      const result = await services.colorMatch('test-api-key');
+      // colorMatch no longer takes an apiKey parameter
+      const result = await services.colorMatch();
 
       expect(result.success).toBe(true);
       expect(result.adjustments).toBeDefined();
@@ -19,7 +21,7 @@ describe('AIServices', () => {
     });
 
     it('adjustments contain expected properties', async () => {
-      const result = await services.colorMatch('test-api-key');
+      const result = await services.colorMatch();
       const adjustment = result.adjustments[0];
 
       expect(adjustment).toHaveProperty('clipId');
@@ -33,11 +35,18 @@ describe('AIServices', () => {
 
   describe('suggestEdits', () => {
     it('returns array of suggestions', async () => {
-      const result = await services.suggestEdits('test-api-key', {});
+      // suggestEdits now takes timelineData as single parameter
+      const result = await services.suggestEdits({});
 
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBeGreaterThan(0);
       expect(typeof result[0]).toBe('string');
+    });
+  });
+
+  describe('mode detection', () => {
+    it('defaults to proxy mode', () => {
+      expect(services.getMode()).toBe('proxy');
     });
   });
 });

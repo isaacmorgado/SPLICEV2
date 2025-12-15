@@ -104,3 +104,25 @@ export function isUXPEnvironment(): boolean {
     return false;
   }
 }
+
+/**
+ * Open external URL in system browser
+ * Works in both UXP (production) and browser (development)
+ */
+export async function openExternalUrl(url: string): Promise<boolean> {
+  try {
+    if (isUXPEnvironment()) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const uxp = require('uxp');
+      await uxp.shell.openExternal(url);
+      return true;
+    } else {
+      // Browser/development environment
+      window.open(url, '_blank');
+      return true;
+    }
+  } catch (error) {
+    console.error('Failed to open external URL:', error);
+    return false;
+  }
+}

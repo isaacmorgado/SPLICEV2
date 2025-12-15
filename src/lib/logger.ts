@@ -1,6 +1,6 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-interface LogEntry {
+export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   message: string;
@@ -45,6 +45,28 @@ class Logger {
 
   clearLogs(): void {
     this.logs = [];
+  }
+
+  /**
+   * Get logs filtered by level.
+   * Returns all logs at or above the specified level.
+   */
+  getLogsFiltered(minLevel: LogLevel = 'debug', limit: number = 50): LogEntry[] {
+    const minLevelNum = LOG_LEVELS[minLevel];
+    return this.logs.filter((entry) => LOG_LEVELS[entry.level] >= minLevelNum).slice(-limit);
+  }
+
+  /**
+   * Export logs as a formatted string for debugging.
+   */
+  exportLogs(minLevel: LogLevel = 'debug'): string {
+    const logs = this.getLogsFiltered(minLevel, this.maxLogs);
+    const lines = logs.map((entry) => {
+      const time = entry.timestamp.split('T')[1].split('.')[0]; // HH:MM:SS
+      const dataStr = entry.data ? ` | ${JSON.stringify(entry.data)}` : '';
+      return `[${time}] ${entry.level.toUpperCase().padEnd(5)} ${entry.message}${dataStr}`;
+    });
+    return lines.join('\n');
   }
 
   private log(level: LogLevel, message: string, data?: unknown): void {
