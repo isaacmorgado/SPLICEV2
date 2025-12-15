@@ -1,17 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createUser, getUserByEmail, createTrialSubscription } from '../shared/db';
-import { hashPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
-import { createCustomer } from '../lib/stripe';
-import { validateReferralCode, redeemReferralCode } from '../lib/referrals';
-import {
-  checkRateLimit,
-  getClientIP,
-  RATE_LIMITS,
-  validatePasswordComplexity,
-  validateEmail,
-} from '../lib/rate-limit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const db = await import('../../lib/db.js');
+  const auth = await import('../../lib/auth.js');
+  const stripe = await import('../../lib/stripe.js');
+  const referrals = await import('../../lib/referrals.js');
+  const rateLimit = await import('../../lib/rate-limit.js');
+
+  const { createUser, getUserByEmail, createTrialSubscription } = db;
+  const { hashPassword, createToken, createRefreshToken, getTokenExpiry } = auth;
+  const { createCustomer } = stripe;
+  const { validateReferralCode, redeemReferralCode } = referrals;
+  const { checkRateLimit, getClientIP, RATE_LIMITS, validatePasswordComplexity, validateEmail } =
+    rateLimit;
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

@@ -1,17 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getUserByEmail } from '../shared/db';
-import { verifyPassword, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
-import {
-  checkRateLimit,
-  getClientIP,
-  RATE_LIMITS,
-  checkAccountLockout,
-  recordFailedLogin,
-  clearFailedLogins,
-  validateEmail,
-} from '../lib/rate-limit';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const db = await import('../../lib/db.js');
+  const auth = await import('../../lib/auth.js');
+  const rateLimit = await import('../../lib/rate-limit.js');
+
+  const { getUserByEmail } = db;
+  const { verifyPassword, createToken, createRefreshToken, getTokenExpiry } = auth;
+  const {
+    checkRateLimit,
+    getClientIP,
+    RATE_LIMITS,
+    checkAccountLockout,
+    recordFailedLogin,
+    clearFailedLogins,
+    validateEmail,
+  } = rateLimit;
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

@@ -1,10 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { getSubscriptionByUserId } from '../shared/db';
-import { TIERS } from '../lib/stripe';
-import { checkUsage } from '../lib/usage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const db = await import('../../lib/db.js');
+  const stripe = await import('../../lib/stripe.js');
+  const usage = await import('../../lib/usage.js');
+
+  const { authenticateRequest } = auth;
+  const { getSubscriptionByUserId } = db;
+  const { TIERS } = stripe;
+  const { checkUsage } = usage;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

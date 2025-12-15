@@ -1,8 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyRefreshToken, createToken, createRefreshToken, getTokenExpiry } from '../lib/auth';
-import { getUserByEmail } from '../shared/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const db = await import('../../lib/db.js');
+
+  const { verifyRefreshToken, createToken, createRefreshToken, getTokenExpiry } = auth;
+  const { getUserByEmail } = db;
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

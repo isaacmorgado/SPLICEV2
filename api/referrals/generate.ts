@@ -1,12 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { generateReferralCode, getReferralStats } from '../lib/referrals';
 
 /**
  * Generate or retrieve a user's referral code
  * GET /api/referrals/generate
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const referrals = await import('../../lib/referrals.js');
+
+  const { authenticateRequest } = auth;
+  const { generateReferralCode, getReferralStats } = referrals;
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

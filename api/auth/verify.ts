@@ -1,8 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { getUserById, getSubscriptionByUserId } from '../shared/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const db = await import('../../lib/db.js');
+
+  const { authenticateRequest } = auth;
+  const { getUserById, getSubscriptionByUserId } = db;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

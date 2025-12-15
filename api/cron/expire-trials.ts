@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getExpiredTrials, convertTrialToFree } from '../shared/db';
 
 /**
  * Cron job to expire trials and convert them to free tier
@@ -14,6 +13,10 @@ import { getExpiredTrials, convertTrialToFree } from '../shared/db';
  * }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const db = await import('../../lib/db.js');
+  const { getExpiredTrials, convertTrialToFree } = db;
+
   // Only allow cron requests (Vercel sets this header)
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;

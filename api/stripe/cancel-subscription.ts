@@ -1,8 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { getSubscriptionByUserId } from '../shared/db';
-import { checkCancellationEligibility } from '../lib/cancellation';
-import { stripe } from '../lib/stripe';
 
 /**
  * Cancel Subscription Endpoint
@@ -17,9 +13,41 @@ import { stripe } from '../lib/stripe';
  * before paying for the usage.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const db = await import('../../lib/db.js');
+  const cancellation = await import('../../lib/cancellation.js');
+  const stripeLib = await import('../../lib/stripe.js');
+
+  const { authenticateRequest } = auth;
+  const { getSubscriptionByUserId } = db;
+  const { checkCancellationEligibility } = cancellation;
+  const { stripe } = stripeLib;
+
   // GET - Check cancellation eligibility
   if (req.method === 'GET') {
-    return handleCheckEligibility(req, res);
+    try {
+      const payload = await authenticateRequest(req);
+      if (!payload) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const eligibility = await checkCancellationEligibility(payload.userId);
+
+      return res.status(200).json({
+        canCancel: eligibility.canCancel,
+        usagePercent: eligibility.usagePercent,
+        threshold: eligibility.threshold,
+        minutesUsed: eligibility.minutesUsed,
+        minutesLimit: eligibility.minutesLimit,
+        tier: eligibility.tier,
+        periodEnd: eligibility.periodEnd,
+        reason: eligibility.reason,
+      });
+    } catch (error) {
+      console.error('Cancellation check error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
   }
 
   // POST - Actually cancel
@@ -87,34 +115,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error) {
     console.error('Cancel subscription error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-/**
- * Handle GET request - Check cancellation eligibility
- */
-async function handleCheckEligibility(req: VercelRequest, res: VercelResponse) {
-  try {
-    const payload = await authenticateRequest(req);
-    if (!payload) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const eligibility = await checkCancellationEligibility(payload.userId);
-
-    return res.status(200).json({
-      canCancel: eligibility.canCancel,
-      usagePercent: eligibility.usagePercent,
-      threshold: eligibility.threshold,
-      minutesUsed: eligibility.minutesUsed,
-      minutesLimit: eligibility.minutesLimit,
-      tier: eligibility.tier,
-      periodEnd: eligibility.periodEnd,
-      reason: eligibility.reason,
-    });
-  } catch (error) {
-    console.error('Cancellation check error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

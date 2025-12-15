@@ -1,9 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { getUsageRecords } from '../shared/db';
-import { checkUsage } from '../lib/usage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const db = await import('../../lib/db.js');
+  const usageModule = await import('../../lib/usage.js');
+
+  const { authenticateRequest } = auth;
+  const { getUsageRecords } = db;
+  const { checkUsage } = usageModule;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

@@ -1,6 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { redeemReferralCode, validateReferralCode } from '../lib/referrals';
 
 /**
  * Redeem a referral code
@@ -8,6 +6,35 @@ import { redeemReferralCode, validateReferralCode } from '../lib/referrals';
  * Body: { code: string }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Dynamic imports for Vercel bundling
+  const auth = await import('../../lib/auth.js');
+  const referrals = await import('../../lib/referrals.js');
+
+  const { authenticateRequest } = auth;
+  const { redeemReferralCode, validateReferralCode } = referrals;
+
+  // GET - Validate a referral code (for checking before registration)
+  if (req.method === 'GET') {
+    try {
+      const code = req.query.code as string;
+
+      if (!code) {
+        return res.status(400).json({ error: 'Referral code is required' });
+      }
+
+      const result = await validateReferralCode(code);
+
+      return res.status(200).json({
+        valid: result.valid,
+        error: result.error,
+      });
+    } catch (error) {
+      console.error('Validate referral code error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // POST - Redeem a referral code
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -46,34 +73,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error) {
     console.error('Redeem referral code error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-/**
- * Validate a referral code (for checking before registration)
- * GET /api/referrals/redeem?code=XXXXXXXX
- */
-export async function validateHandler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    return handler(req, res);
-  }
-
-  try {
-    const code = req.query.code as string;
-
-    if (!code) {
-      return res.status(400).json({ error: 'Referral code is required' });
-    }
-
-    const result = await validateReferralCode(code);
-
-    return res.status(200).json({
-      valid: result.valid,
-      error: result.error,
-    });
-  } catch (error) {
-    console.error('Validate referral code error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
