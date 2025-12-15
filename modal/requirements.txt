@@ -1,0 +1,9 @@
+# Modal Voice Isolation Dependencies
+# Note: These are installed via modal.Image in voice_isolation.py
+# This file is for documentation and local testing
+
+demucs>=4.0.0
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+soundfile>=0.12.0

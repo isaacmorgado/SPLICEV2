@@ -41,6 +41,7 @@ export enum SpliceErrorCode {
   PREMIERE_NO_PROJECT = 'PPR_402',
   PREMIERE_TIMELINE_ERROR = 'PPR_403',
   PREMIERE_OPERATION_LOCKED = 'PPR_404',
+  SEQUENCE_NOT_FOUND = 'PPR_405',
 
   // Transcription Errors (5xx)
   TRANSCRIPTION_FAILED = 'TRS_501',
@@ -121,6 +122,8 @@ export const USER_MESSAGES: Record<SpliceErrorCode, string> = {
     'Timeline operation failed. Try saving your project and restarting.',
   [SpliceErrorCode.PREMIERE_OPERATION_LOCKED]:
     'Another operation is in progress. Please wait for it to complete.',
+  [SpliceErrorCode.SEQUENCE_NOT_FOUND]:
+    'The requested sequence could not be found. It may have been deleted or renamed.',
 
   // Transcription
   [SpliceErrorCode.TRANSCRIPTION_FAILED]:

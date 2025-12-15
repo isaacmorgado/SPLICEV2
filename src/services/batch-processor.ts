@@ -147,37 +147,90 @@ export class BatchProcessor {
   }
 
   /**
-   * Process a single sequence
+   * Process a single sequence - the core implementation
    */
   private async processSequence(job: BatchJob, options: BatchProcessorOptions): Promise<void> {
-    // TODO: This would need to interact with PremiereAPI to:
-    // 1. Switch to the sequence
-    // 2. Run silence detection with the given options
-    // 3. Apply cuts
-    // 4. Report progress
+    const threshold = options.silenceThreshold || options.preset?.threshold || -40;
+    const useVoiceIsolation =
+      options.useVoiceIsolation ?? options.preset?.useVoiceIsolation ?? false;
 
-    // For now, simulate processing with progress updates
-    const steps = 5;
-    for (let i = 0; i < steps; i++) {
-      if (this.isPaused || job.status === 'cancelled') {
-        throw new Error('Processing cancelled');
-      }
+    // Step 1: Switch to the target sequence (10% progress)
+    logger.info(`Switching to sequence: ${job.sequenceName}`);
+    job.progress = 5;
+    this.reportProgress(job, options);
 
-      job.progress = ((i + 1) / steps) * 100;
-
-      if (options.onProgress) {
-        options.onProgress(job);
-      }
-
-      // Simulate work
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    const switched = await this.premiereAPI.switchToSequence(job.sequenceId);
+    if (!switched) {
+      throw new SpliceError(
+        SpliceErrorCode.SEQUENCE_NOT_FOUND,
+        `Could not switch to sequence: ${job.sequenceName}`
+      );
     }
 
-    // In a real implementation, this would call:
-    // await this.premiereAPI.switchToSequence(job.sequenceId);
-    // const threshold = options.silenceThreshold || options.preset?.threshold || -40;
-    // const useVoiceIsolation = options.useVoiceIsolation || options.preset?.useVoiceIsolation || false;
-    // await this.premiereAPI.autoCutSilence(threshold, { useVoiceIsolation });
+    job.progress = 10;
+    this.reportProgress(job, options);
+
+    // Check for cancellation (status can change externally via cancelJob)
+    if (this.isPaused || (job.status as BatchJobStatus) === 'cancelled') {
+      throw new Error('Processing cancelled');
+    }
+
+    // Step 2: Run silence detection (10% -> 60% progress)
+    logger.info(`Detecting silence in sequence: ${job.sequenceName}`);
+    job.progress = 15;
+    this.reportProgress(job, options);
+
+    const detectionResult = await this.premiereAPI.autoCutSilence(threshold, {
+      useVoiceIsolation,
+      useAIAnalysis: true,
+    });
+
+    job.progress = 60;
+    this.reportProgress(job, options);
+
+    // Check for cancellation (status can change externally via cancelJob)
+    if (this.isPaused || (job.status as BatchJobStatus) === 'cancelled') {
+      this.premiereAPI.clearPendingSections();
+      throw new Error('Processing cancelled');
+    }
+
+    // Step 3: Apply the cuts (60% -> 95% progress)
+    if (detectionResult.silentSections > 0) {
+      logger.info(`Applying ${detectionResult.silentSections} cuts to: ${job.sequenceName}`);
+      job.progress = 65;
+      this.reportProgress(job, options);
+
+      const applyResult = await this.premiereAPI.applySilenceCuts();
+
+      if (applyResult.errors.length > 0) {
+        logger.warn(`Some cuts failed: ${applyResult.errors.length} errors`, applyResult.errors);
+      }
+
+      logger.info(
+        `Applied ${applyResult.cutsApplied}/${applyResult.cutsAttempted} cuts, removed ${applyResult.timeRemoved.toFixed(1)}s`
+      );
+    } else {
+      logger.info(`No silence detected in: ${job.sequenceName}`);
+    }
+
+    job.progress = 95;
+    this.reportProgress(job, options);
+
+    // Step 4: Finalize (95% -> 100%)
+    // Small delay to allow UI to update
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    job.progress = 100;
+    this.reportProgress(job, options);
+  }
+
+  /**
+   * Report progress to callback if provided
+   */
+  private reportProgress(job: BatchJob, options: BatchProcessorOptions): void {
+    if (options.onProgress) {
+      options.onProgress(job);
+    }
   }
 
   /**
@@ -242,6 +295,9 @@ export class BatchProcessor {
         cancelledCount++;
       }
     }
+
+    // Clear any pending cuts from the API
+    this.premiereAPI.clearPendingSections();
 
     this.isPaused = false;
     this.isProcessing = false;
@@ -320,8 +376,10 @@ export class BatchProcessor {
    * Helper method to get sequence name from Premiere
    */
   private async getSequenceName(sequenceId: string): Promise<string> {
-    // In a real implementation, this would query Premiere
-    // For now, return a placeholder
+    const info = await this.premiereAPI.getSequenceInfo(sequenceId);
+    if (info) {
+      return info.name;
+    }
     return `Sequence ${sequenceId.substring(0, 8)}`;
   }
 

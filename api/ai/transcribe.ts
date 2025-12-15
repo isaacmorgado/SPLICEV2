@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
 import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
+import { transcribeWithGroq } from '../_lib/groq';
 
+// Fallback to OpenAI if user provides their own API key
 const OPENAI_WHISPER_URL = 'https://api.openai.com/v1/audio/transcriptions';
 
 export interface TranscriptionWord {
@@ -51,57 +53,65 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Convert base64 to buffer
     const audioBuffer = Buffer.from(audioBase64, 'base64');
 
-    // Create form data for OpenAI
-    const formData = new FormData();
-    formData.append('file', new Blob([audioBuffer]), 'audio.wav');
-    formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json');
-    formData.append('timestamp_granularities[]', 'word');
+    let result: TranscriptionResult;
 
-    if (language) {
-      formData.append('language', language);
-    }
+    if (userApiKey) {
+      // BYOK: Use OpenAI with user's API key
+      const formData = new FormData();
+      formData.append('file', new Blob([audioBuffer]), 'audio.wav');
+      formData.append('model', 'whisper-1');
+      formData.append('response_format', 'verbose_json');
+      formData.append('timestamp_granularities[]', 'word');
 
-    // Call OpenAI Whisper API
-    const apiKey = userApiKey || process.env.OPENAI_API_KEY;
-    const response = await fetch(OPENAI_WHISPER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
+      if (language) {
+        formData.append('language', language);
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('OpenAI Whisper error:', error);
-      return res.status(response.status).json({
-        error: 'Transcription failed',
-        details: error,
+      const response = await fetch(OPENAI_WHISPER_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${userApiKey}`,
+        },
+        body: formData,
       });
-    }
 
-    const data = await response.json();
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('OpenAI Whisper error:', error);
+        return res.status(response.status).json({
+          error: 'Transcription failed',
+          details: error,
+        });
+      }
 
-    // Extract word-level timestamps
-    const words: TranscriptionWord[] = (data.words || []).map(
-      (w: { word: string; start: number; end: number }) => ({
-        word: w.word,
-        start: w.start,
-        end: w.end,
-      })
-    );
+      const data = (await response.json()) as {
+        text: string;
+        words?: { word: string; start: number; end: number }[];
+        duration?: number;
+      };
 
-    // Track usage (only if using platform API key)
-    if (!userApiKey) {
+      result = {
+        text: data.text,
+        words: (data.words || []).map((w) => ({
+          word: w.word,
+          start: w.start,
+          end: w.end,
+        })),
+        duration: data.duration || durationSeconds,
+      };
+    } else {
+      // Platform users: Use Groq (67% cheaper than OpenAI)
+      const groqResult = await transcribeWithGroq(audioBuffer, { language });
+
+      result = {
+        text: groqResult.text,
+        words: groqResult.words,
+        duration: groqResult.duration || durationSeconds,
+      };
+
+      // Track usage after successful transcription
       await trackUsage(payload.userId, 'transcription', estimatedMinutes);
     }
-
-    const result: TranscriptionResult = {
-      text: data.text,
-      words,
-      duration: data.duration || durationSeconds,
-    };
 
     return res.status(200).json({
       success: true,

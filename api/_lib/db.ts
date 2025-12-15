@@ -1,8 +1,36 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, neonConfig, NeonQueryFunction } from '@neondatabase/serverless';
+
+// Enable connection pooling for better performance
+neonConfig.fetchConnectionCache = true;
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export { sql };
+
+// Type for the SQL query function
+type SqlQueryFunction = NeonQueryFunction<false, false>;
+
+/**
+ * Execute multiple SQL statements in a transaction
+ * @param callback - Function that receives the sql tagged template and returns queries
+ */
+export async function transaction<T>(
+  callback: (txSql: SqlQueryFunction) => Promise<T>
+): Promise<T> {
+  // Neon supports transactions via BEGIN/COMMIT
+  // For simple cases, we can use a single connection
+  const txSql = neon(process.env.DATABASE_URL!);
+
+  try {
+    await txSql`BEGIN`;
+    const result = await callback(txSql);
+    await txSql`COMMIT`;
+    return result;
+  } catch (error) {
+    await txSql`ROLLBACK`;
+    throw error;
+  }
+}
 
 // User queries
 export async function getUserByEmail(email: string) {
@@ -113,6 +141,72 @@ export async function getUsageRecords(userId: string, limit = 50) {
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT ${limit}
+  `;
+  return rows;
+}
+
+// Trial system functions
+
+/**
+ * Create a trial subscription for a new user
+ * Trial: 30 days with Pro-tier features (300 minutes)
+ */
+export async function createTrialSubscription(userId: string) {
+  const trialEndDate = new Date();
+  trialEndDate.setDate(trialEndDate.getDate() + 30); // 30-day trial
+
+  const rows = await sql`
+    INSERT INTO subscriptions (user_id, tier, status, minutes_used, is_trial, trial_started_at, trial_ends_at)
+    VALUES (${userId}, 'pro', 'active', 0, true, NOW(), ${trialEndDate})
+    RETURNING *
+  `;
+  return rows[0];
+}
+
+/**
+ * Check if user's trial is still active
+ */
+export async function checkTrialStatus(userId: string) {
+  const rows = await sql`
+    SELECT id, is_trial, trial_ends_at,
+           CASE WHEN trial_ends_at > NOW() THEN true ELSE false END as trial_active
+    FROM subscriptions
+    WHERE user_id = ${userId}
+  `;
+
+  if (!rows[0]) {
+    return { exists: false, isTrial: false, trialActive: false, trialEndsAt: null };
+  }
+
+  return {
+    exists: true,
+    isTrial: rows[0].is_trial,
+    trialActive: rows[0].trial_active,
+    trialEndsAt: rows[0].trial_ends_at,
+  };
+}
+
+/**
+ * Convert an expired trial to the free tier
+ */
+export async function convertTrialToFree(userId: string) {
+  const rows = await sql`
+    UPDATE subscriptions
+    SET tier = 'free', is_trial = false, minutes_used = 0
+    WHERE user_id = ${userId} AND is_trial = true
+    RETURNING *
+  `;
+  return rows[0];
+}
+
+/**
+ * Get all expired trials that need to be converted
+ */
+export async function getExpiredTrials() {
+  const rows = await sql`
+    SELECT user_id, trial_ends_at
+    FROM subscriptions
+    WHERE is_trial = true AND trial_ends_at < NOW()
   `;
   return rows;
 }

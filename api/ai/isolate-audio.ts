@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
 import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
+import { isolateVoiceWithDemucs } from '../_lib/voice-isolation';
 
+// Use global fetch types for Node.js 18+
+declare const fetch: typeof globalThis.fetch;
+
+// Fallback to ElevenLabs if user provides their own API key
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/audio-isolation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,35 +44,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Convert base64 to buffer
     const audioBuffer = Buffer.from(audioBase64, 'base64');
 
-    // Create form data for ElevenLabs
-    const formData = new FormData();
-    formData.append('audio', new Blob([audioBuffer]), 'audio.wav');
+    let isolatedBase64: string;
 
-    // Call ElevenLabs API
-    const apiKey = userApiKey || process.env.ELEVENLABS_API_KEY;
-    const response = await fetch(ELEVENLABS_API_URL, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': apiKey!,
-      },
-      body: formData,
-    });
+    if (userApiKey) {
+      // BYOK: Use ElevenLabs with user's API key
+      const formData = new FormData();
+      formData.append('audio', new Blob([audioBuffer]), 'audio.wav');
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('ElevenLabs error:', error);
-      return res.status(response.status).json({
-        error: 'Voice isolation failed',
-        details: error,
+      const response = await fetch(ELEVENLABS_API_URL, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': userApiKey,
+        },
+        body: formData,
       });
-    }
 
-    // Get isolated audio
-    const isolatedAudio = await response.arrayBuffer();
-    const isolatedBase64 = Buffer.from(isolatedAudio).toString('base64');
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('ElevenLabs error:', error);
+        return res.status(response.status).json({
+          error: 'Voice isolation failed',
+          details: error,
+        });
+      }
 
-    // Track usage (only if using platform API key)
-    if (!userApiKey) {
+      const isolatedAudio = await response.arrayBuffer();
+      isolatedBase64 = Buffer.from(isolatedAudio).toString('base64');
+    } else {
+      // Platform users: Use Demucs on Modal (97% cheaper than ElevenLabs)
+      const result = await isolateVoiceWithDemucs(audioBuffer);
+      isolatedBase64 = result.vocalsBase64;
+
+      // Track usage after successful isolation
       await trackUsage(payload.userId, 'voice_isolation', estimatedMinutes);
     }
 

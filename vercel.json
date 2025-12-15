@@ -1,7 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "name": "splice-api",
   "buildCommand": "npm run typecheck && npm run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
@@ -9,7 +8,6 @@
   "regions": ["iad1"],
   "functions": {
     "api/**/*.ts": {
-      "runtime": "nodejs20.x",
       "maxDuration": 30,
       "memory": 1024
     }
@@ -75,5 +73,11 @@
   "github": {
     "silent": false,
     "autoAlias": true
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/expire-trials",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }

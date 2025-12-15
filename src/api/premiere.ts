@@ -856,6 +856,118 @@ export class PremiereAPI {
   }
 
   // ============================================
+  // Sequence Management Methods
+  // ============================================
+
+  /**
+   * Get all sequences in the current project
+   */
+  async getSequences(): Promise<Array<{ id: string; name: string }>> {
+    if (!this.isAvailable()) {
+      logger.info('Running in mock mode');
+      return [
+        { id: 'seq-001', name: 'Main Sequence' },
+        { id: 'seq-002', name: 'B-Roll' },
+        { id: 'seq-003', name: 'Interview' },
+      ];
+    }
+
+    try {
+      const sequences: Array<{ id: string; name: string }> = [];
+      const projectItems = this.project.rootItem.children;
+
+      for (let i = 0; i < projectItems.numItems; i++) {
+        const item = projectItems[i];
+        if (item.type === 2) {
+          // Type 2 is sequence in Premiere
+          sequences.push({
+            id: item.nodeId,
+            name: item.name,
+          });
+        }
+      }
+
+      return sequences;
+    } catch (error) {
+      logger.error('Failed to get sequences', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Switch to a specific sequence by ID
+   * @param sequenceId - The sequence node ID to switch to
+   */
+  async switchToSequence(sequenceId: string): Promise<boolean> {
+    if (!this.isAvailable()) {
+      logger.info('Running in mock mode - simulating sequence switch');
+      return true;
+    }
+
+    try {
+      const projectItems = this.project.rootItem.children;
+
+      for (let i = 0; i < projectItems.numItems; i++) {
+        const item = projectItems[i];
+        if (item.nodeId === sequenceId && item.type === 2) {
+          // Open the sequence in the timeline
+          if (typeof this.project.openSequence === 'function') {
+            this.project.openSequence(item.nodeId);
+          } else if (typeof item.openInTimeline === 'function') {
+            item.openInTimeline();
+          }
+
+          logger.info(`Switched to sequence: ${item.name}`);
+          return true;
+        }
+      }
+
+      logger.warn(`Sequence not found: ${sequenceId}`);
+      return false;
+    } catch (error) {
+      logger.error('Failed to switch sequence', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get information about a specific sequence
+   */
+  async getSequenceInfo(sequenceId: string): Promise<{ name: string; duration: number } | null> {
+    if (!this.isAvailable()) {
+      return { name: `Sequence ${sequenceId.substring(0, 8)}`, duration: 180 };
+    }
+
+    try {
+      const projectItems = this.project.rootItem.children;
+
+      for (let i = 0; i < projectItems.numItems; i++) {
+        const item = projectItems[i];
+        if (item.nodeId === sequenceId && item.type === 2) {
+          // Get the sequence object
+          const sequences = this.project.sequences;
+          for (let j = 0; j < sequences.numSequences; j++) {
+            const seq = sequences[j];
+            if (seq.name === item.name) {
+              return {
+                name: seq.name,
+                duration: seq.end?.seconds || 0,
+              };
+            }
+          }
+
+          return { name: item.name, duration: 0 };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Failed to get sequence info', error);
+      return null;
+    }
+  }
+
+  // ============================================
   // Mock methods for development/testing
   // ============================================
   private mockAnalyzeTimeline(): TimelineAnalysis {

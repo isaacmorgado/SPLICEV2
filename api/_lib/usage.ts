@@ -1,4 +1,4 @@
-import { getSubscriptionByUserId, updateMinutesUsed, createUsageRecord } from './db';
+import { getSubscriptionByUserId, sql, transaction } from './db';
 import { TIERS } from './stripe';
 
 export type Feature = 'voice_isolation' | 'transcription' | 'take_analysis';
@@ -42,16 +42,49 @@ export async function hasEnoughMinutes(userId: string, requiredMinutes: number):
   return usage.remaining >= requiredMinutes;
 }
 
+/**
+ * Track usage atomically - creates usage record and updates subscription in a single transaction
+ * This prevents data inconsistency if one operation fails
+ */
 export async function trackUsage(
   userId: string,
   feature: Feature,
   minutes: number
 ): Promise<UsageCheckResult> {
+  // Execute both operations in a transaction
+  await transaction(async (txSql) => {
+    // Create usage record
+    await txSql`INSERT INTO usage_records (user_id, feature, minutes) VALUES (${userId}, ${feature}, ${minutes})`;
+
+    // Update subscription minutes in the same transaction
+    await txSql`UPDATE subscriptions SET minutes_used = minutes_used + ${minutes} WHERE user_id = ${userId}`;
+  });
+
+  // Return updated usage stats
+  return checkUsage(userId);
+}
+
+/**
+ * Legacy non-transactional version - kept for reference
+ * @deprecated Use trackUsage instead
+ */
+export async function trackUsageLegacy(
+  userId: string,
+  feature: Feature,
+  minutes: number
+): Promise<UsageCheckResult> {
   // Record the usage
-  await createUsageRecord(userId, feature, minutes);
+  await sql`
+    INSERT INTO usage_records (user_id, feature, minutes)
+    VALUES (${userId}, ${feature}, ${minutes})
+  `;
 
   // Update the subscription minutes
-  await updateMinutesUsed(userId, minutes);
+  await sql`
+    UPDATE subscriptions
+    SET minutes_used = minutes_used + ${minutes}
+    WHERE user_id = ${userId}
+  `;
 
   // Return updated usage stats
   return checkUsage(userId);
@@ -74,4 +107,25 @@ export async function estimateMinutes(feature: Feature, durationSeconds: number)
     default:
       return Math.ceil(baseMinutes);
   }
+}
+
+/**
+ * Refund usage if an operation fails after tracking
+ * Also transactional to ensure consistency
+ */
+export async function refundUsage(
+  userId: string,
+  feature: Feature,
+  minutes: number
+): Promise<UsageCheckResult> {
+  const negativeMinutes = -minutes;
+  await transaction(async (txSql) => {
+    // Create negative usage record for audit trail
+    await txSql`INSERT INTO usage_records (user_id, feature, minutes) VALUES (${userId}, ${feature}, ${negativeMinutes})`;
+
+    // Decrement subscription minutes
+    await txSql`UPDATE subscriptions SET minutes_used = GREATEST(0, minutes_used - ${minutes}) WHERE user_id = ${userId}`;
+  });
+
+  return checkUsage(userId);
 }

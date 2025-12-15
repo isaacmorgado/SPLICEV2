@@ -1,12 +1,12 @@
 import Stripe from 'stripe';
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-11-20.acacia',
+  apiVersion: '2025-02-24.acacia',
 });
 
-// Tier configuration - values TBD
+// Tier configuration
 export interface Tier {
-  id: 'free' | 'pro' | 'studio';
+  id: 'free' | 'pro' | 'pro_referral' | 'studio';
   name: string;
   monthlyMinutes: number;
   priceMonthly: number; // cents
@@ -24,15 +24,22 @@ export const TIERS: Record<string, Tier> = {
   pro: {
     id: 'pro',
     name: 'Pro',
-    monthlyMinutes: 120,
-    priceMonthly: 1499, // $14.99
+    monthlyMinutes: 300,
+    priceMonthly: 6500, // $65.00
     stripePriceId: process.env.STRIPE_PRO_PRICE_ID || '',
+  },
+  pro_referral: {
+    id: 'pro_referral',
+    name: 'Pro (Referral)',
+    monthlyMinutes: 300, // Same features as Pro
+    priceMonthly: 4500, // $45.00 (discounted for 2 months)
+    stripePriceId: process.env.STRIPE_PRO_REFERRAL_PRICE_ID || '',
   },
   studio: {
     id: 'studio',
     name: 'Studio',
-    monthlyMinutes: 500,
-    priceMonthly: 3999, // $39.99
+    monthlyMinutes: 1000,
+    priceMonthly: 14900, // $149.00
     stripePriceId: process.env.STRIPE_STUDIO_PRICE_ID || '',
   },
 };

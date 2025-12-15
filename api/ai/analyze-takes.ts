@@ -2,6 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
 import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
 
+// Use global fetch types for Node.js 18+
+declare const fetch: typeof globalThis.fetch;
+
 type LLMProvider = 'openai' | 'gemini';
 
 interface Take {
@@ -146,9 +149,11 @@ async function analyzeWithOpenAI(prompt: string, userApiKey?: string): Promise<T
     throw new Error(`OpenAI API error: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as {
+    choices: { message: { content: string } }[];
+  };
   const content = data.choices[0]?.message?.content;
-  const parsed = JSON.parse(content);
+  const parsed = JSON.parse(content) as { takeGroups?: TakeGroup[] };
 
   return parsed.takeGroups || [];
 }
@@ -181,9 +186,11 @@ async function analyzeWithGemini(prompt: string, userApiKey?: string): Promise<T
     throw new Error(`Gemini API error: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as {
+    candidates?: { content?: { parts?: { text: string }[] } }[];
+  };
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  const parsed = JSON.parse(content);
+  const parsed = JSON.parse(content || '{}') as { takeGroups?: TakeGroup[] };
 
   return parsed.takeGroups || [];
 }

@@ -92,3 +92,56 @@ BEGIN
   RETURN v_total;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================
+-- RATE LIMITS TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS rate_limits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for fast lookups and cleanup
+CREATE INDEX idx_rate_limits_key ON rate_limits(key);
+CREATE INDEX idx_rate_limits_key_created ON rate_limits(key, created_at);
+
+-- ============================================
+-- ACCOUNT LOCKOUTS TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS account_lockouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  failed_attempts INTEGER DEFAULT 0,
+  last_attempt TIMESTAMP WITH TIME ZONE,
+  locked_until TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for email lookups
+CREATE INDEX idx_account_lockouts_email ON account_lockouts(email);
+
+-- ============================================
+-- PROCESSED WEBHOOK EVENTS TABLE (Idempotency)
+-- ============================================
+CREATE TABLE IF NOT EXISTS processed_webhook_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id VARCHAR(255) UNIQUE NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for event lookups
+CREATE INDEX idx_processed_events_event_id ON processed_webhook_events(event_id);
+
+-- Cleanup old rate limit entries (run periodically)
+CREATE OR REPLACE FUNCTION cleanup_rate_limits()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM rate_limits
+  WHERE created_at < NOW() - INTERVAL '1 hour';
+
+  DELETE FROM processed_webhook_events
+  WHERE processed_at < NOW() - INTERVAL '7 days';
+END;
+$$ LANGUAGE plpgsql;
