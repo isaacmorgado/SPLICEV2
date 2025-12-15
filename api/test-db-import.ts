@@ -1,14 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { getSql } from './_shared/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    // Try dynamic import of the db module to catch any errors
-    const dbModule = await import('./_shared/db');
-    const sql = await dbModule.getSql();
+    const sql = await getSql();
     const result = await sql`SELECT 1 as check`;
     res.status(200).json({
       success: true,
-      message: 'Dynamic import from ./db works!',
+      message: 'Static import from _shared/db works!',
       result,
     });
   } catch (error) {
