@@ -4,9 +4,6 @@
  * Cost: ~$0.01 per minute of audio (97% cheaper than ElevenLabs)
  */
 
-// Use global fetch types for Node.js 18+
-declare const fetch: typeof globalThis.fetch;
-
 export interface VoiceIsolationResult {
   vocalsBase64: string;
   accompanimentBase64?: string;

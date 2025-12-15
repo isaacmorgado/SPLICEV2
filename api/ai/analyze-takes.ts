@@ -2,9 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../_lib/auth';
 import { hasEnoughMinutes, trackUsage, estimateMinutes } from '../_lib/usage';
 
-// Use global fetch types for Node.js 18+
-declare const fetch: typeof globalThis.fetch;
-
 type LLMProvider = 'openai' | 'gemini';
 
 interface Take {

@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (userApiKey) {
       // BYOK: Use ElevenLabs with user's API key
       const formData = new FormData();
-      formData.append('audio', new Blob([audioBuffer]), 'audio.wav');
+      formData.append('audio', new Blob([new Uint8Array(audioBuffer)]), 'audio.wav');
 
       const response = await fetch(ELEVENLABS_API_URL, {
         method: 'POST',

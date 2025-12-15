@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (userApiKey) {
       // BYOK: Use OpenAI with user's API key
       const formData = new FormData();
-      formData.append('file', new Blob([audioBuffer]), 'audio.wav');
+      formData.append('file', new Blob([new Uint8Array(audioBuffer)]), 'audio.wav');
       formData.append('model', 'whisper-1');
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'word');
