@@ -1,9 +1,6 @@
-// Type-only import to avoid runtime issues
-import type { NeonQueryFunction } from '@neondatabase/serverless';
-
 // SQL function type for tagged template literals
+// Using inline types to avoid any @neondatabase/serverless imports at module level
 type SqlFunction = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
-type SqlQueryFunction = NeonQueryFunction<false, false>;
 
 // Initialize sql lazily with dynamic import
 let _sqlInstance: SqlFunction | null = null;
@@ -37,19 +34,17 @@ async function sqlWrapper(strings: TemplateStringsArray, ...values: unknown[]): 
 }
 
 // Export a tagged template compatible function
-export const sql = sqlWrapper as unknown as SqlQueryFunction;
+export const sql = sqlWrapper as SqlFunction;
 
 /**
  * Execute multiple SQL statements in a transaction
  * @param callback - Function that receives the sql tagged template and returns queries
  */
-export async function transaction<T>(
-  callback: (txSql: SqlQueryFunction) => Promise<T>
-): Promise<T> {
+export async function transaction<T>(callback: (txSql: SqlFunction) => Promise<T>): Promise<T> {
   // Neon supports transactions via BEGIN/COMMIT
   // Dynamic import to avoid module-level issues
   const { neon } = await import('@neondatabase/serverless');
-  const txSql = neon(getDbUrl());
+  const txSql = neon(getDbUrl()) as unknown as SqlFunction;
 
   try {
     await txSql`BEGIN`;
