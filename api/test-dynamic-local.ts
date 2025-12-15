@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Dynamic import of local file (similar to how health.ts imports npm packages)
-    const { hello } = await import('../lib/db-minimal');
+    const { hello } = await import('../lib/db-minimal.js');
     const message = hello();
     res.status(200).json({
       success: true,
