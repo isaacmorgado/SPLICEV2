@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSql } from './_shared/db';
+import { getSql } from './_shared/db-minimal';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -7,7 +7,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await sql`SELECT 1 as check`;
     res.status(200).json({
       success: true,
-      message: 'Static import from _shared/db works!',
+      message: 'Static import from _shared/db-minimal works!',
       result,
     });
   } catch (error) {
