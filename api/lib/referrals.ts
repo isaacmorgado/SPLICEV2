@@ -7,7 +7,7 @@
  * - Limit: 10 redemptions per code
  */
 
-import { getSql } from '../db';
+import { getSql } from '../_shared/db';
 import crypto from 'crypto';
 
 export interface ReferralCode {

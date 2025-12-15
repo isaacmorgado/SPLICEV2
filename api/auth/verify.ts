@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth';
-import { getUserById, getSubscriptionByUserId } from '../db';
+import { getUserById, getSubscriptionByUserId } from '../_shared/db';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

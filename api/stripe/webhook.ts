@@ -6,7 +6,7 @@ import {
   stripe,
   TIERS,
 } from '../lib/stripe';
-import { updateSubscription, getSql, transaction } from '../db';
+import { updateSubscription, getSql, transaction } from '../_shared/db';
 import { decrementReferralMonths } from '../lib/referrals';
 import type Stripe from 'stripe';
 
