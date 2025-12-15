@@ -1,7 +1,13 @@
-import { neon, NeonQueryFunction } from '@neondatabase/serverless';
+// Type-only import to avoid runtime issues
+import type { NeonQueryFunction } from '@neondatabase/serverless';
 
-// Initialize sql lazily to handle env vars not being available at import time
-let _sqlInstance: NeonQueryFunction<false, false> | null = null;
+// SQL function type for tagged template literals
+type SqlFunction = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+type SqlQueryFunction = NeonQueryFunction<false, false>;
+
+// Initialize sql lazily with dynamic import
+let _sqlInstance: SqlFunction | null = null;
+let _initPromise: Promise<void> | null = null;
 
 function getDbUrl(): string {
   const url = process.env.DATABASE_URL;
@@ -11,21 +17,27 @@ function getDbUrl(): string {
   return url;
 }
 
-// Create a lazy-initialized sql function that works as a tagged template
-function createLazySql() {
-  const sqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => {
-    if (!_sqlInstance) {
-      _sqlInstance = neon(getDbUrl());
-    }
-    return _sqlInstance(strings, ...values);
-  };
-  return sqlFn as NeonQueryFunction<false, false>;
+async function initSql(): Promise<void> {
+  if (_sqlInstance) return;
+
+  // Dynamic import to avoid module-level initialization issues
+  const { neon } = await import('@neondatabase/serverless');
+  _sqlInstance = neon(getDbUrl()) as unknown as SqlFunction;
 }
 
-export const sql = createLazySql();
+// Wrapper that ensures initialization before query
+async function sqlWrapper(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> {
+  if (!_sqlInstance) {
+    if (!_initPromise) {
+      _initPromise = initSql();
+    }
+    await _initPromise;
+  }
+  return _sqlInstance!(strings, ...values);
+}
 
-// Type for the SQL query function
-type SqlQueryFunction = NeonQueryFunction<false, false>;
+// Export a tagged template compatible function
+export const sql = sqlWrapper as unknown as SqlQueryFunction;
 
 /**
  * Execute multiple SQL statements in a transaction
@@ -35,7 +47,8 @@ export async function transaction<T>(
   callback: (txSql: SqlQueryFunction) => Promise<T>
 ): Promise<T> {
   // Neon supports transactions via BEGIN/COMMIT
-  // For simple cases, we can use a single connection
+  // Dynamic import to avoid module-level issues
+  const { neon } = await import('@neondatabase/serverless');
   const txSql = neon(getDbUrl());
 
   try {
