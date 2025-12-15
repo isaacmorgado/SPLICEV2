@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sql } from './_lib/db';
 
 interface HealthCheck {
   service: string;
@@ -69,6 +68,10 @@ async function checkDatabase(): Promise<HealthCheck> {
   const start = Date.now();
 
   try {
+    // Dynamically import neon to avoid module-level initialization issues
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL!);
+
     // Simple query to verify connection
     await sql`SELECT 1 as check`;
     const latencyMs = Date.now() - start;
