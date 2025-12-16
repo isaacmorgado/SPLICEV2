@@ -8,7 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { authenticateRequest } = auth;
   const { getSubscriptionByUserId } = db;
-  const { createCheckoutSession, TIERS, createCustomer } = stripeLib;
+  const { createCheckoutSession, TIERS, createCustomer, getTierPriceId } = stripeLib;
+  type BillingPeriod = 'monthly' | 'yearly';
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -20,16 +22,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { tierId, successUrl, cancelUrl } = req.body;
+    const { tierId, billingPeriod = 'monthly', successUrl, cancelUrl } = req.body;
+
+    // Validate billing period
+    if (billingPeriod !== 'monthly' && billingPeriod !== 'yearly') {
+      return res.status(400).json({ error: 'Invalid billing period. Use "monthly" or "yearly"' });
+    }
 
     // Validate tier
     const tier = TIERS[tierId];
-    if (!tier || !tier.stripePriceId) {
+    if (!tier) {
       return res.status(400).json({ error: 'Invalid tier selected' });
     }
 
     if (tier.id === 'free') {
       return res.status(400).json({ error: 'Cannot checkout for free tier' });
+    }
+
+    // Get the appropriate price ID for the billing period
+    const priceId = getTierPriceId(tier, billingPeriod as BillingPeriod);
+    if (!priceId) {
+      return res.status(400).json({
+        error: `${billingPeriod} pricing not available for this tier`,
+      });
     }
 
     // Validate URLs
@@ -52,16 +67,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Create checkout session
-    const session = await createCheckoutSession(
-      customerId,
-      tier.stripePriceId,
-      successUrl,
-      cancelUrl
-    );
+    const session = await createCheckoutSession(customerId, priceId, successUrl, cancelUrl);
 
     return res.status(200).json({
       sessionId: session.id,
       url: session.url,
+      billingPeriod,
+      priceId,
     });
   } catch (error) {
     console.error('Checkout session error:', error);

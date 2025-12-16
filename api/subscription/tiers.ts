@@ -9,14 +9,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Return public tier information
+    // Return public tier information with both monthly and yearly pricing
     const tiers = Object.values(TIERS).map((tier) => ({
       id: tier.id,
       name: tier.name,
       monthlyMinutes: tier.monthlyMinutes,
+      // Monthly pricing
       priceMonthly: tier.priceMonthly,
-      priceFormatted:
+      priceMonthlyFormatted:
         tier.priceMonthly === 0 ? 'Free' : `$${(tier.priceMonthly / 100).toFixed(2)}/mo`,
+      // Yearly pricing
+      priceYearly: tier.priceYearly,
+      priceYearlyFormatted:
+        tier.priceYearly === 0 ? 'Free' : `$${(tier.priceYearly / 100).toFixed(2)}/yr`,
+      yearlyEffectiveMonthly: tier.yearlyEffectiveMonthly,
+      yearlyEffectiveMonthlyFormatted:
+        tier.yearlyEffectiveMonthly === 0
+          ? 'Free'
+          : `$${(tier.yearlyEffectiveMonthly / 100).toFixed(2)}/mo`,
+      yearlySavings: tier.yearlySavings,
+      yearlySavingsFormatted:
+        tier.yearlySavings === 0 ? null : `$${(tier.yearlySavings / 100).toFixed(2)}`,
+      yearlyDiscountPercent:
+        tier.priceMonthly > 0
+          ? Math.round((1 - tier.priceYearly / (tier.priceMonthly * 12)) * 100)
+          : 0,
+      // Features
       features: getTierFeatures(tier.id),
     }));
 

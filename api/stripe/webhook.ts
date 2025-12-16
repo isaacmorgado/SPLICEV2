@@ -60,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const subscription = await getSubscription(subscriptionId);
     const priceId = subscription.items.data[0]?.price.id;
-    const tier = getTierByPriceId(priceId);
+    const tierResult = getTierByPriceId(priceId);
 
     const sql = await getSql();
     const users = await sql`
@@ -77,18 +77,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     await updateSubscription(userId, {
       stripeSubscriptionId: subscriptionId,
-      tier: tier?.id || 'pro',
+      tier: tierResult?.tier.id || 'pro',
       status: 'active',
       periodEnd: new Date(subscription.current_period_end * 1000),
     });
 
-    console.log(`Checkout completed for user ${userId}, tier: ${tier?.id || 'pro'}`);
+    console.log(
+      `Checkout completed for user ${userId}, tier: ${tierResult?.tier.id || 'pro'}, billing: ${tierResult?.billingPeriod || 'unknown'}`
+    );
   }
 
   async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     const customerId = subscription.customer as string;
     const priceId = subscription.items.data[0]?.price.id;
-    const tier = getTierByPriceId(priceId);
+    const tierResult = getTierByPriceId(priceId);
 
     const sql = await getSql();
     const users = await sql`
@@ -121,12 +123,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await updateSubscription(userId, {
-      tier: tier?.id || 'pro',
+      tier: tierResult?.tier.id || 'pro',
       status,
       periodEnd: new Date(subscription.current_period_end * 1000),
     });
 
-    console.log(`Subscription updated for user ${userId}, status: ${status}, tier: ${tier?.id}`);
+    console.log(
+      `Subscription updated for user ${userId}, status: ${status}, tier: ${tierResult?.tier.id}`
+    );
   }
 
   async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
@@ -210,12 +214,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const subscription = await stripe.subscriptions.retrieve(stripeSubId);
           const itemId = subscription.items.data[0]?.id;
 
-          if (itemId && TIERS.pro.stripePriceId) {
+          if (itemId && TIERS.pro.stripePriceIdMonthly) {
+            // Upgrade to regular Pro price (keep same billing period if possible)
+            // For now, default to monthly since referral is typically monthly
             await stripe.subscriptions.update(stripeSubId, {
               items: [
                 {
                   id: itemId,
-                  price: TIERS.pro.stripePriceId,
+                  price: TIERS.pro.stripePriceIdMonthly,
                 },
               ],
               proration_behavior: 'none',
