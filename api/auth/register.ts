@@ -81,8 +81,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const passwordHash = await hashPassword(password);
     const user = await createUser(email, passwordHash);
 
-    // Create Stripe customer
-    const stripeCustomer = await createCustomer(email, user.id);
+    // Create Stripe customer (optional - continues if it fails)
+    let stripeCustomer: { id: string } | null = null;
+    try {
+      stripeCustomer = await createCustomer(email, user.id);
+    } catch (stripeError) {
+      console.error('Stripe customer creation failed (non-blocking):', stripeError);
+      // Continue without Stripe customer - can be linked later
+    }
 
     // Create 30-day trial subscription (Pro features)
     const subscription = await createTrialSubscription(user.id);
@@ -117,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       token,
       refreshToken,
       expiresAt: expiresAt.toISOString(),
-      stripeCustomerId: stripeCustomer.id,
+      stripeCustomerId: stripeCustomer?.id ?? null,
       trial: {
         active: true,
         endsAt: subscription.trial_ends_at,
