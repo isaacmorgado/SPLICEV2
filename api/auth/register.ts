@@ -19,7 +19,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { email, password, referralCode } = req.body;
+    // Safely parse request body
+    let body: { email?: string; password?: string; referralCode?: string };
+    try {
+      body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+    } catch {
+      return res.status(400).json({
+        error: 'Invalid JSON',
+        message: 'Request body must be valid JSON with Content-Type: application/json',
+      });
+    }
+
+    const { email, password, referralCode } = body;
 
     // Validate input presence
     if (!email || !password) {
