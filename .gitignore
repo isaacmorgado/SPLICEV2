@@ -42,3 +42,4 @@ coverage/
 # UXP
 .uxp/
 .vercel
+.env*.local

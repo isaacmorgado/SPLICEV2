@@ -33,9 +33,11 @@ const IV_LENGTH = 16;
  * In production, this should be a secure, randomly generated key
  */
 function getEncryptionKey(): Buffer {
-  const key = process.env.API_KEY_ENCRYPTION_SECRET || process.env.JWT_SECRET;
+  const key = process.env.API_KEY_ENCRYPTION_SECRET;
   if (!key) {
-    throw new Error('Encryption key not configured');
+    throw new Error(
+      'API_KEY_ENCRYPTION_SECRET environment variable is required for API key encryption'
+    );
   }
   // Derive a 256-bit key from the secret
   return crypto.createHash('sha256').update(key).digest();

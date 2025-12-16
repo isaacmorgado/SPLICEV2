@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { ApiKeyService } from '../../lib/api-keys.js';
 
 /**
  * User API Keys Management Endpoint
@@ -97,7 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Validate API key format
-    const validation = validateApiKeyFormat(service as apiKeys.ApiKeyService, apiKey);
+    const validation = validateApiKeyFormat(service as ApiKeyService, apiKey);
     if (!validation.valid) {
       return res
         .status(400)
@@ -107,12 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Store the key
-    const storedKey = await storeUserApiKey(
-      userId,
-      service as apiKeys.ApiKeyService,
-      apiKey,
-      keyName
-    );
+    const storedKey = await storeUserApiKey(userId, service as ApiKeyService, apiKey, keyName);
 
     return res.status(200).json({
       success: true,
@@ -147,7 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json(createErrorResponse(400, 'VALIDATION_ERROR', 'Invalid service type'));
     }
 
-    const deleted = await deleteUserApiKey(userId, service as apiKeys.ApiKeyService);
+    const deleted = await deleteUserApiKey(userId, service as ApiKeyService);
 
     if (!deleted) {
       return res

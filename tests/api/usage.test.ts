@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the database module - using inline functions to avoid hoisting issues
-vi.mock('../../api/_lib/db', () => ({
+vi.mock('../../lib/db', () => ({
   sql: vi.fn(),
   transaction: vi.fn(),
   getSubscriptionByUserId: vi.fn(),
 }));
 
-vi.mock('../../api/_lib/stripe', () => ({
+vi.mock('../../lib/stripe', () => ({
   TIERS: {
     free: { monthlyMinutes: 30 },
     pro: { monthlyMinutes: 300 },
@@ -16,8 +16,8 @@ vi.mock('../../api/_lib/stripe', () => ({
 }));
 
 // Import after mocking
-import { getSubscriptionByUserId, transaction } from '../../api/_lib/db';
-import { checkUsage, hasEnoughMinutes, estimateMinutes, trackUsage } from '../../api/_lib/usage';
+import { getSubscriptionByUserId, transaction } from '../../lib/db';
+import { checkUsage, hasEnoughMinutes, estimateMinutes, trackUsage } from '../../lib/usage';
 
 describe('Usage Tracking', () => {
   beforeEach(() => {

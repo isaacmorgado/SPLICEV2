@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { validatePasswordComplexity, validateEmail, getClientIP } from '../../api/_lib/rate-limit';
+import {
+  validatePasswordComplexity,
+  validateEmail,
+  getClientIP,
+  getRateLimitIdentifier,
+} from '../../lib/rate-limit';
 
 // Mock the database module
-vi.mock('../../api/_lib/db', () => ({
+vi.mock('../../lib/db', () => ({
   sql: vi.fn(),
   transaction: vi.fn(),
 }));
@@ -165,6 +170,44 @@ describe('Rate Limit Utilities', () => {
         },
       };
       expect(getClientIP(req)).toBe('192.168.1.4');
+    });
+  });
+
+  describe('getRateLimitIdentifier', () => {
+    it('should use user ID when provided', () => {
+      const ip = '192.168.1.1';
+      const userId = 'user-123';
+      const prefix = 'api';
+
+      const result = getRateLimitIdentifier(ip, userId, prefix);
+      expect(result).toBe('api:user:user-123');
+    });
+
+    it('should use IP when user ID is undefined', () => {
+      const ip = '192.168.1.1';
+      const userId = undefined;
+      const prefix = 'api';
+
+      const result = getRateLimitIdentifier(ip, userId, prefix);
+      expect(result).toBe('api:ip:192.168.1.1');
+    });
+
+    it('should use IP when user ID is empty string', () => {
+      const ip = '192.168.1.1';
+      const userId = undefined;
+      const prefix = 'login';
+
+      const result = getRateLimitIdentifier(ip, userId, prefix);
+      expect(result).toBe('login:ip:192.168.1.1');
+    });
+
+    it('should work with different prefixes', () => {
+      const ip = '192.168.1.1';
+      const userId = 'user-456';
+
+      expect(getRateLimitIdentifier(ip, userId, 'login')).toBe('login:user:user-456');
+      expect(getRateLimitIdentifier(ip, userId, 'register')).toBe('register:user:user-456');
+      expect(getRateLimitIdentifier(ip, userId, 'api')).toBe('api:user:user-456');
     });
   });
 });

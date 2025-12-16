@@ -1,10 +1,12 @@
 import { logger } from '../lib/logger';
 import { BackendClient, backendClient } from './backend-client';
-import { WhisperClient } from './whisper';
-import { ElevenLabsClient } from './elevenlabs';
-import { LLMProvider } from './llm-provider';
 import { transcriptionCache, voiceIsolationCache } from '../utils/audio-cache';
 import { PerformanceMetrics } from '../utils/performance-metrics';
+
+// Type imports - these don't add to bundle size
+import type { WhisperClient } from './whisper';
+import type { ElevenLabsClient } from './elevenlabs';
+import type { LLMProvider } from './llm-provider';
 
 interface ColorMatchResult {
   success: boolean;

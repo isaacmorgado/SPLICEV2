@@ -11,6 +11,7 @@ export default defineConfig({
     target: 'es2020',
     minify: 'esbuild',
     sourcemap: true,
+    chunkSizeWarningLimit: 400,
 
     rollupOptions: {
       input: {
@@ -20,6 +21,16 @@ export default defineConfig({
         entryFileNames: '[name].js',
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]',
+        manualChunks: {
+          'vendor-spectrum': [
+            '@spectrum-web-components/action-button',
+            '@spectrum-web-components/button',
+            '@spectrum-web-components/textfield',
+            '@spectrum-web-components/theme',
+            '@spectrum-web-components/styles',
+            '@spectrum-web-components/icons-workflow',
+          ],
+        },
       },
     },
   },

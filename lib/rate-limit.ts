@@ -46,16 +46,36 @@ export const RATE_LIMITS = {
 } as const;
 
 /**
+ * Get the rate limit identifier key
+ * @param ip - IP address
+ * @param userId - Optional user ID for authenticated requests
+ * @param prefix - Rate limit prefix from config
+ * @returns The composite rate limit key
+ */
+export function getRateLimitIdentifier(
+  ip: string,
+  userId: string | undefined,
+  prefix: string
+): string {
+  if (userId) {
+    return `${prefix}:user:${userId}`;
+  }
+  return `${prefix}:ip:${ip}`;
+}
+
+/**
  * Check and update rate limit for a given identifier
- * @param identifier - Unique identifier (usually IP or user ID)
+ * @param identifier - Unique identifier (usually IP address)
  * @param config - Rate limit configuration
+ * @param userId - Optional user ID for authenticated requests
  * @returns Rate limit result
  */
 export async function checkRateLimit(
   identifier: string,
-  config: RateLimitConfig
+  config: RateLimitConfig,
+  userId?: string
 ): Promise<RateLimitResult> {
-  const key = `${config.prefix}:${identifier}`;
+  const key = getRateLimitIdentifier(identifier, userId, config.prefix);
   const now = new Date();
   const windowStart = new Date(now.getTime() - config.windowSeconds * 1000);
 

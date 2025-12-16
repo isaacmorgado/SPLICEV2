@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { validatePasswordComplexity, validateEmail } from '../../api/_lib/rate-limit';
+import { validatePasswordComplexity, validateEmail } from '../../lib/rate-limit';
 
 // Mock all dependencies - using inline functions to avoid hoisting issues
-vi.mock('../../api/_lib/db', () => ({
-  sql: vi.fn(),
+vi.mock('../../lib/db', () => ({
+  getSql: vi.fn(),
   getUserByEmail: vi.fn(),
   createUser: vi.fn(),
   createSubscription: vi.fn(),
 }));
 
-vi.mock('../../api/_lib/auth', () => ({
+vi.mock('../../lib/auth', () => ({
   verifyPassword: vi.fn(),
   hashPassword: vi.fn(),
   createToken: vi.fn(),
@@ -17,20 +17,38 @@ vi.mock('../../api/_lib/auth', () => ({
   getTokenExpiry: vi.fn(),
 }));
 
-vi.mock('../../api/_lib/stripe', () => ({
+vi.mock('../../lib/stripe', () => ({
   createCustomer: vi.fn(),
 }));
 
 // Import after mocking
-import { getUserByEmail, createUser, createSubscription, sql } from '../../api/_lib/db';
+import { getUserByEmail, createUser, createSubscription, getSql } from '../../lib/db';
 import {
   verifyPassword,
   hashPassword,
   createToken,
   createRefreshToken,
   getTokenExpiry,
-} from '../../api/_lib/auth';
-import { createCustomer } from '../../api/_lib/stripe';
+} from '../../lib/auth';
+import { createCustomer } from '../../lib/stripe';
+
+// Define types for mock data
+interface MockUser {
+  id: string;
+  email: string;
+  password_hash: string;
+  created_at?: Date;
+}
+
+interface MockUserWithoutPassword {
+  id: string;
+  email: string;
+  created_at?: Date;
+}
+
+interface MockAccountLockout {
+  failed_attempts: number;
+}
 
 describe('Authentication Endpoints', () => {
   beforeEach(() => {
@@ -39,41 +57,41 @@ describe('Authentication Endpoints', () => {
 
   describe('Login Flow', () => {
     it('should successfully authenticate valid credentials', async () => {
-      const mockUser = {
+      const mockUser: MockUser = {
         id: 'user-123',
         email: 'test@example.com',
         password_hash: 'hashed_password',
       };
 
-      vi.mocked(getUserByEmail).mockResolvedValue(mockUser);
+      vi.mocked(getUserByEmail).mockResolvedValue(mockUser as any);
       vi.mocked(verifyPassword).mockResolvedValue(true);
       vi.mocked(createToken).mockResolvedValue('jwt_token');
       vi.mocked(createRefreshToken).mockResolvedValue('refresh_token');
       vi.mocked(getTokenExpiry).mockReturnValue(new Date('2024-01-15'));
 
       // Simulate login flow
-      const user = await getUserByEmail('test@example.com');
+      const user = (await getUserByEmail('test@example.com')) as MockUser;
       expect(user).toBeDefined();
 
-      const isValid = await verifyPassword('password123', user!.password_hash);
+      const isValid = await verifyPassword('password123', user.password_hash);
       expect(isValid).toBe(true);
 
-      const token = await createToken({ userId: user!.id, email: user!.email });
+      const token = await createToken({ userId: user.id, email: user.email });
       expect(token).toBe('jwt_token');
     });
 
     it('should reject invalid password', async () => {
-      const mockUser = {
+      const mockUser: MockUser = {
         id: 'user-123',
         email: 'test@example.com',
         password_hash: 'hashed_password',
       };
 
-      vi.mocked(getUserByEmail).mockResolvedValue(mockUser);
+      vi.mocked(getUserByEmail).mockResolvedValue(mockUser as any);
       vi.mocked(verifyPassword).mockResolvedValue(false);
 
-      const user = await getUserByEmail('test@example.com');
-      const isValid = await verifyPassword('wrong_password', user!.password_hash);
+      const user = (await getUserByEmail('test@example.com')) as MockUser;
+      const isValid = await verifyPassword('wrong_password', user.password_hash);
 
       expect(isValid).toBe(false);
     });
@@ -88,7 +106,7 @@ describe('Authentication Endpoints', () => {
 
   describe('Registration Flow', () => {
     it('should create user with valid credentials', async () => {
-      const newUser = {
+      const newUser: MockUserWithoutPassword = {
         id: 'new-user-123',
         email: 'new@example.com',
       };
@@ -97,7 +115,7 @@ describe('Authentication Endpoints', () => {
       vi.mocked(hashPassword).mockResolvedValue('hashed_new_password');
       vi.mocked(createUser).mockResolvedValue(newUser as any);
       vi.mocked(createCustomer).mockResolvedValue({ id: 'cus_123' } as any);
-      vi.mocked(createSubscription).mockResolvedValue({});
+      vi.mocked(createSubscription).mockResolvedValue({} as any);
       vi.mocked(createToken).mockResolvedValue('new_token');
       vi.mocked(createRefreshToken).mockResolvedValue('new_refresh');
       vi.mocked(getTokenExpiry).mockReturnValue(new Date('2024-01-15'));
@@ -111,20 +129,22 @@ describe('Authentication Endpoints', () => {
       expect(hash).toBe('hashed_new_password');
 
       // Create user
-      const user = await createUser('new@example.com', hash);
+      const user = (await createUser('new@example.com', hash)) as MockUserWithoutPassword;
       expect(user.id).toBe('new-user-123');
 
       // Create Stripe customer
-      const customer = await createCustomer('new@example.com', user.id);
+      const customer = (await createCustomer('new@example.com', user.id)) as { id: string };
       expect(customer.id).toBe('cus_123');
     });
 
     it('should reject duplicate email', async () => {
-      vi.mocked(getUserByEmail).mockResolvedValue({
+      const existingUser: MockUser = {
         id: 'existing-user',
         email: 'existing@example.com',
         password_hash: 'hash',
-      });
+      };
+
+      vi.mocked(getUserByEmail).mockResolvedValue(existingUser as any);
 
       const existing = await getUserByEmail('existing@example.com');
       expect(existing).not.toBeNull();
@@ -196,11 +216,15 @@ describe('Authentication Endpoints', () => {
 describe('Account Lockout', () => {
   describe('Failed Login Tracking', () => {
     it('should track failed login attempts', async () => {
-      const mockSql = vi.mocked(sql);
-      mockSql.mockResolvedValueOnce([{ failed_attempts: 1 }]);
+      const mockSqlFn = vi.fn();
+      const mockLockout: MockAccountLockout = { failed_attempts: 1 };
+      mockSqlFn.mockResolvedValueOnce([mockLockout]);
+
+      vi.mocked(getSql).mockResolvedValue(mockSqlFn as any);
 
       // Simulate recording a failed attempt
-      const result = await sql`
+      const sql = await getSql();
+      const result = (await sql`
         INSERT INTO account_lockouts (email, failed_attempts, last_attempt)
         VALUES (${'test@example.com'}, 1, ${new Date()})
         ON CONFLICT (email) DO UPDATE
@@ -208,7 +232,7 @@ describe('Account Lockout', () => {
           failed_attempts = account_lockouts.failed_attempts + 1,
           last_attempt = ${new Date()}
         RETURNING failed_attempts
-      `;
+      `) as MockAccountLockout[];
 
       expect(result[0].failed_attempts).toBe(1);
     });
@@ -221,15 +245,18 @@ describe('Account Lockout', () => {
     });
 
     it('should clear lockout on successful login', async () => {
-      const mockSql = vi.mocked(sql);
-      mockSql.mockResolvedValueOnce([]);
+      const mockSqlFn = vi.fn();
+      mockSqlFn.mockResolvedValueOnce([]);
 
+      vi.mocked(getSql).mockResolvedValue(mockSqlFn as any);
+
+      const sql = await getSql();
       await sql`
         DELETE FROM account_lockouts
         WHERE email = ${'test@example.com'}
       `;
 
-      expect(mockSql).toHaveBeenCalled();
+      expect(mockSqlFn).toHaveBeenCalled();
     });
   });
 

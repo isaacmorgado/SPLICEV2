@@ -254,22 +254,35 @@ export class AuthPanel {
 
     try {
       const isHealthy = await backendClient.checkHealth();
+
+      // Clear existing content
+      statusEl.innerHTML = '';
+
+      // Create status indicator span
+      const indicator = document.createElement('span');
+
       if (isHealthy) {
-        statusEl.innerHTML = `
-          <span style="color: var(--spectrum-global-color-green-500);">● </span>
-          Service online
-        `;
+        indicator.style.color = 'var(--spectrum-global-color-green-500)';
+        indicator.textContent = '● ';
+        statusEl.appendChild(indicator);
+        statusEl.appendChild(document.createTextNode('Service online'));
       } else {
-        statusEl.innerHTML = `
-          <span style="color: var(--spectrum-global-color-orange-500);">● </span>
-          Service degraded
-        `;
+        indicator.style.color = 'var(--spectrum-global-color-orange-500)';
+        indicator.textContent = '● ';
+        statusEl.appendChild(indicator);
+        statusEl.appendChild(document.createTextNode('Service degraded'));
       }
     } catch {
-      statusEl.innerHTML = `
-        <span style="color: var(--spectrum-global-color-red-500);">● </span>
-        Service offline - Please check your connection
-      `;
+      // Clear existing content
+      statusEl.innerHTML = '';
+
+      const indicator = document.createElement('span');
+      indicator.style.color = 'var(--spectrum-global-color-red-500)';
+      indicator.textContent = '● ';
+      statusEl.appendChild(indicator);
+      statusEl.appendChild(
+        document.createTextNode('Service offline - Please check your connection')
+      );
     }
   }
 

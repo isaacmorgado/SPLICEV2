@@ -1,5 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// Type for user returned from database
+interface UserRecord {
+  id: string;
+  email: string;
+  created_at: Date;
+}
+
 /**
  * User Profile Management Endpoint
  *
@@ -50,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
    * Get user profile with subscription info
    */
   async function handleGetProfile(userId: string, res: VercelResponse) {
-    const user = await getUserById(userId);
+    const user = (await getUserById(userId)) as UserRecord | null;
     if (!user) {
       return res.status(404).json(createErrorResponse(404, 'NOT_FOUND', 'User not found'));
     }

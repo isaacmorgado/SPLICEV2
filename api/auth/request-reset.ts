@@ -13,10 +13,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const passwordReset = await import('../../lib/password-reset.js');
   const rateLimit = await import('../../lib/rate-limit.js');
   const middleware = await import('../../lib/middleware.js');
+  const emailService = await import('../../lib/email.js');
 
   const { createPasswordResetToken, getResetTokenInfo } = passwordReset;
   const { checkRateLimit, getClientIP, RATE_LIMITS, validateEmail } = rateLimit;
   const { createErrorResponse } = middleware;
+  const { sendPasswordResetEmail } = emailService;
 
   if (req.method !== 'POST') {
     return res
@@ -84,23 +86,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // Send password reset email
+    const emailResult = await sendPasswordResetEmail(email, result.token, result.userId);
+
+    if (!emailResult.success) {
+      console.error('Failed to send password reset email:', emailResult.error);
+      // Don't reveal failure to user (security), but log it
+    }
+
     // DEVELOPMENT ONLY: Return token in response
-    // In production, this should be sent via email
     if (process.env.NODE_ENV === 'development') {
       return res.status(200).json({
         success: true,
         message: 'Password reset token generated',
         token: result.token,
         userId: result.userId,
-        warning: 'Token should be sent via email in production',
+        emailSent: emailResult.success,
+        warning: 'Token should only be sent via email in production',
       });
     }
 
-    // PRODUCTION: Send email (placeholder)
-    // TODO: Integrate email service (SendGrid, AWS SES, etc.)
-    console.log(`Password reset token for user ${result.userId}: ${result.token}`);
-    console.log(`Email would be sent to: ${email}`);
-
+    // PRODUCTION: Return generic success message
     return res.status(200).json({
       success: true,
       message: 'If an account exists with this email, a password reset link will be sent',

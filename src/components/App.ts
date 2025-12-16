@@ -22,6 +22,9 @@ interface AppState {
   tracks: number;
   status: string;
   isProcessing: boolean;
+  progressPercent: number;
+  progressMessage: string;
+  canCancel: boolean;
   // Silence tab state
   silenceThreshold: number;
   useVoiceIsolation: boolean;
@@ -56,6 +59,7 @@ export class App {
   private readonly maxPollCount: number = 60; // Poll for 5 minutes max (60 * 5 sec)
   private authPanel: AuthPanel | null = null;
   private isAuthenticated: boolean = false;
+  private listenerCleanups: Array<() => void> = [];
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -70,6 +74,9 @@ export class App {
       tracks: 0,
       status: 'Ready',
       isProcessing: false,
+      progressPercent: 0,
+      progressMessage: '',
+      canCancel: false,
       silenceThreshold: -40,
       useVoiceIsolation: false,
       silentSections: 0,
@@ -132,7 +139,7 @@ export class App {
     });
 
     // Listen for visibility changes to refresh subscription when user returns from Stripe
-    document.addEventListener('visibilitychange', () => {
+    this.addDocumentListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this.pollingInterval) {
         this.handleVisibilityReturn();
       }
@@ -331,11 +338,11 @@ export class App {
         <section class="project-info" style="background: var(--spectrum-global-color-gray-200); padding: 12px; border-radius: 4px;">
           <div style="font-size: 11px; color: var(--spectrum-global-color-gray-500); margin-bottom: 4px;">PROJECT</div>
           <div style="font-size: 13px; font-weight: 500; color: var(--spectrum-global-color-gray-50);">
-            ${this.state.projectName || 'No project open'}
+            ${this.escapeHtml(this.state.projectName || 'No project open')}
           </div>
           ${
             this.state.projectPath
-              ? `<div style="font-size: 10px; color: var(--spectrum-global-color-gray-400); margin-top: 2px; word-break: break-all;">${this.state.projectPath}</div>`
+              ? `<div style="font-size: 10px; color: var(--spectrum-global-color-gray-400); margin-top: 2px; word-break: break-all;">${this.escapeHtml(this.state.projectPath)}</div>`
               : ''
           }
         </section>
@@ -394,8 +401,8 @@ export class App {
             ${this.state.availablePresets
               .map(
                 (preset) => `
-              <option value="${preset.id}" ${this.state.selectedPresetId === preset.id ? 'selected' : ''}>
-                ${preset.name}${preset.description ? ` - ${preset.description}` : ''}
+              <option value="${this.escapeHtml(preset.id)}" ${this.state.selectedPresetId === preset.id ? 'selected' : ''}>
+                ${this.escapeHtml(preset.name)}${preset.description ? ` - ${this.escapeHtml(preset.description)}` : ''}
               </option>
             `
               )
@@ -499,7 +506,7 @@ export class App {
             <div style="background: var(--spectrum-global-color-gray-200); padding: 12px; border-radius: 4px; max-height: 100px; overflow-y: auto;">
               <div style="font-size: 11px; color: var(--spectrum-global-color-gray-500); margin-bottom: 8px;">TRANSCRIPT</div>
               <div style="font-size: 12px; color: var(--spectrum-global-color-gray-300); line-height: 1.5;">
-                ${this.state.transcript.slice(0, 500)}${this.state.transcript.length > 500 ? '...' : ''}
+                ${this.escapeHtml(this.state.transcript.slice(0, 500))}${this.state.transcript.length > 500 ? '...' : ''}
               </div>
             </div>
           `
@@ -555,7 +562,7 @@ export class App {
             (group, groupIdx) => `
           <div style="background: var(--spectrum-global-color-gray-200); padding: 10px; border-radius: 4px;">
             <div style="font-size: 11px; font-weight: 500; color: var(--spectrum-global-color-gray-300); margin-bottom: 8px;">
-              "${group.phrase.slice(0, 40)}${group.phrase.length > 40 ? '...' : ''}"
+              "${this.escapeHtml(group.phrase.slice(0, 40))}${group.phrase.length > 40 ? '...' : ''}"
             </div>
             <div style="display: flex; flex-direction: column; gap: 4px;">
               ${group.takes.map((take, takeIdx) => this.renderTakeItem(take, groupIdx, takeIdx)).join('')}
@@ -867,132 +874,116 @@ export class App {
   // Event Handlers
   // ============================================
 
+  /**
+   * Helper method to add an event listener while tracking cleanup
+   */
+  private addListener(selector: string, event: string, handler: EventListener): void {
+    const el = this.container.querySelector(selector);
+    if (el) {
+      el.addEventListener(event, handler);
+      this.listenerCleanups.push(() => el.removeEventListener(event, handler));
+    }
+  }
+
+  /**
+   * Helper method to add a document-level event listener while tracking cleanup
+   */
+  private addDocumentListener(event: string, handler: EventListener): void {
+    document.addEventListener(event, handler);
+    this.listenerCleanups.push(() => document.removeEventListener(event, handler));
+  }
+
+  /**
+   * Clean up all tracked event listeners
+   */
+  private detachEventListeners(): void {
+    this.listenerCleanups.forEach((cleanup) => cleanup());
+    this.listenerCleanups = [];
+  }
+
   private attachEventListeners(): void {
+    // Clean up old listeners first to prevent memory leaks
+    this.detachEventListeners();
     // Tab navigation
     const tabs: TabId[] = ['home', 'silence', 'takes', 'settings'];
     tabs.forEach((tab) => {
-      const btn = this.container.querySelector(`#tab-${tab}`);
-      btn?.addEventListener('click', () => this.switchTab(tab));
+      this.addListener(`#tab-${tab}`, 'click', () => this.switchTab(tab));
     });
 
     // Home tab
-    this.container
-      .querySelector('#btn-analyze')
-      ?.addEventListener('click', () => this.handleAnalyze());
-    this.container
-      .querySelector('#btn-quick-silence')
-      ?.addEventListener('click', () => this.handleQuickSilence());
+    this.addListener('#btn-analyze', 'click', () => this.handleAnalyze());
+    this.addListener('#btn-quick-silence', 'click', () => this.handleQuickSilence());
 
     // Silence tab
-    this.container.querySelector('#preset-selector')?.addEventListener('change', (e) => {
+    this.addListener('#preset-selector', 'change', (e) => {
       this.handlePresetChange((e.target as HTMLSelectElement).value);
     });
-    this.container.querySelector('#silence-threshold')?.addEventListener('input', (e) => {
+    this.addListener('#silence-threshold', 'input', (e) => {
       this.state.silenceThreshold = parseInt((e.target as HTMLInputElement).value);
       this.state.selectedPresetId = null; // Clear preset when manually adjusting
       const label = this.container.querySelector('label[for="silence-threshold"]');
       if (label) label.textContent = `Silence Threshold: ${this.state.silenceThreshold} dB`;
     });
-    this.container.querySelector('#voice-isolation')?.addEventListener('change', (e) => {
+    this.addListener('#voice-isolation', 'change', (e) => {
       this.state.useVoiceIsolation = (e.target as HTMLInputElement).checked;
       this.state.selectedPresetId = null; // Clear preset when manually adjusting
     });
-    this.container
-      .querySelector('#btn-save-preset')
-      ?.addEventListener('click', () => this.handleSavePreset());
-    this.container
-      .querySelector('#btn-detect-silence')
-      ?.addEventListener('click', () => this.handleDetectSilence());
-    this.container
-      .querySelector('#btn-apply-cuts')
-      ?.addEventListener('click', () => this.handleApplyCuts());
+    this.addListener('#btn-save-preset', 'click', () => this.handleSavePreset());
+    this.addListener('#btn-detect-silence', 'click', () => this.handleDetectSilence());
+    this.addListener('#btn-apply-cuts', 'click', () => this.handleApplyCuts());
 
     // Takes tab - Strategy selection
-    this.container
-      .querySelector('#strategy-best-only')
-      ?.addEventListener('click', () => this.handleStrategyChange('best_only'));
-    this.container
-      .querySelector('#strategy-all-takes')
-      ?.addEventListener('click', () => this.handleStrategyChange('all_takes'));
-    this.container
-      .querySelector('#strategy-manual')
-      ?.addEventListener('click', () => this.handleStrategyChange('manual'));
-    this.container
-      .querySelector('#btn-preview-takes')
-      ?.addEventListener('click', () => this.handlePreviewTakes());
+    this.addListener('#strategy-best-only', 'click', () => this.handleStrategyChange('best_only'));
+    this.addListener('#strategy-all-takes', 'click', () => this.handleStrategyChange('all_takes'));
+    this.addListener('#strategy-manual', 'click', () => this.handleStrategyChange('manual'));
+    this.addListener('#btn-preview-takes', 'click', () => this.handlePreviewTakes());
 
     // Takes tab
-    this.container
-      .querySelector('#btn-transcribe')
-      ?.addEventListener('click', () => this.handleTranscribe());
-    this.container
-      .querySelector('#btn-analyze-takes')
-      ?.addEventListener('click', () => this.handleAnalyzeTakes());
-    this.container
-      .querySelector('#btn-apply-takes')
-      ?.addEventListener('click', () => this.handleApplyTakes());
+    this.addListener('#btn-transcribe', 'click', () => this.handleTranscribe());
+    this.addListener('#btn-analyze-takes', 'click', () => this.handleAnalyzeTakes());
+    this.addListener('#btn-apply-takes', 'click', () => this.handleApplyTakes());
 
     // Go-to buttons for each take
     this.state.takeGroups.forEach((group, groupIdx) => {
       group.takes.forEach((take, takeIdx) => {
-        this.container
-          .querySelector(`#btn-goto-take-${groupIdx}-${takeIdx}`)
-          ?.addEventListener('click', () => this.handleGoToTake(take));
+        this.addListener(`#btn-goto-take-${groupIdx}-${takeIdx}`, 'click', () =>
+          this.handleGoToTake(take)
+        );
       });
     });
 
     // Settings tab - Subscription buttons
-    this.container
-      .querySelector('#btn-upgrade-pro')
-      ?.addEventListener('click', () => this.handleUpgrade('pro'));
-    this.container
-      .querySelector('#btn-upgrade-studio')
-      ?.addEventListener('click', () => this.handleUpgrade('studio'));
-    this.container
-      .querySelector('#btn-manage-subscription')
-      ?.addEventListener('click', () => this.handleManageSubscription());
-    this.container
-      .querySelector('#btn-refresh-subscription')
-      ?.addEventListener('click', () => this.handleRefreshSubscription());
+    this.addListener('#btn-upgrade-pro', 'click', () => this.handleUpgrade('pro'));
+    this.addListener('#btn-upgrade-studio', 'click', () => this.handleUpgrade('studio'));
+    this.addListener('#btn-manage-subscription', 'click', () => this.handleManageSubscription());
+    this.addListener('#btn-refresh-subscription', 'click', () => this.handleRefreshSubscription());
     // LLM provider selection
-    this.container
-      .querySelector('#llm-openai')
-      ?.addEventListener('click', () => this.setLLMProvider('openai'));
-    this.container
-      .querySelector('#llm-gemini')
-      ?.addEventListener('click', () => this.setLLMProvider('gemini'));
+    this.addListener('#llm-openai', 'click', () => this.setLLMProvider('openai'));
+    this.addListener('#llm-gemini', 'click', () => this.setLLMProvider('gemini'));
     // Logout button
-    this.container
-      .querySelector('#btn-logout')
-      ?.addEventListener('click', () => this.handleLogout());
+    this.addListener('#btn-logout', 'click', () => this.handleLogout());
 
     // Debug panel
-    this.container
-      .querySelector('#debug-panel-header')
-      ?.addEventListener('click', () => this.toggleDebugPanel());
-    this.container.querySelector('#btn-export-logs')?.addEventListener('click', (e) => {
+    this.addListener('#debug-panel-header', 'click', () => this.toggleDebugPanel());
+    this.addListener('#btn-export-logs', 'click', (e) => {
       e.stopPropagation();
       this.handleExportLogs();
     });
-    this.container.querySelector('#btn-clear-logs')?.addEventListener('click', (e) => {
+    this.addListener('#btn-clear-logs', 'click', (e) => {
       e.stopPropagation();
       this.handleClearLogs();
     });
-    this.container
-      .querySelector('#debug-filter-error')
-      ?.addEventListener('click', () => this.setDebugFilter('error'));
-    this.container
-      .querySelector('#debug-filter-warn')
-      ?.addEventListener('click', () => this.setDebugFilter('warn'));
-    this.container
-      .querySelector('#debug-filter-info')
-      ?.addEventListener('click', () => this.setDebugFilter('info'));
-    this.container
-      .querySelector('#debug-filter-debug')
-      ?.addEventListener('click', () => this.setDebugFilter('debug'));
+    this.addListener('#debug-filter-error', 'click', () => this.setDebugFilter('error'));
+    this.addListener('#debug-filter-warn', 'click', () => this.setDebugFilter('warn'));
+    this.addListener('#debug-filter-info', 'click', () => this.setDebugFilter('info'));
+    this.addListener('#debug-filter-debug', 'click', () => this.setDebugFilter('debug'));
   }
 
   private switchTab(tab: TabId): void {
+    // If leaving settings tab, stop polling
+    if (this.state.activeTab === 'settings' && tab !== 'settings') {
+      this.stopSubscriptionPolling();
+    }
     this.state.activeTab = tab;
     this.render();
   }
@@ -1231,6 +1222,9 @@ export class App {
   private async handleLogout(): Promise<void> {
     this.setStatus('Logging out...', true);
     try {
+      // Stop any active polling
+      this.stopSubscriptionPolling();
+
       await backendClient.logout();
       await secureStorage.clearAll();
       this.isAuthenticated = false;
@@ -1481,16 +1475,66 @@ export class App {
     }
   }
 
-  private setStatus(message: string, isProcessing: boolean = false): void {
+  private setStatus(
+    message: string,
+    isProcessing: boolean = false,
+    progress?: number,
+    canCancel: boolean = false
+  ): void {
     this.state.status = message;
     this.state.isProcessing = isProcessing;
+    this.state.progressPercent = progress ?? 0;
+    this.state.progressMessage = progress !== undefined && progress > 0 ? message : '';
+    this.state.canCancel = canCancel;
+
     const statusEl = this.container.querySelector('#status-message');
     if (statusEl) {
-      statusEl.innerHTML = `
-        ${isProcessing ? '<sp-progress-circle size="s" indeterminate></sp-progress-circle>' : ''}
-        ${message}
-      `;
+      // Clear existing content
+      statusEl.innerHTML = '';
+
+      // Add progress circle if processing and no specific progress
+      if (isProcessing && (progress === undefined || progress === 0)) {
+        const progressCircle = document.createElement('sp-progress-circle');
+        progressCircle.setAttribute('size', 's');
+        progressCircle.setAttribute('indeterminate', '');
+        statusEl.appendChild(progressCircle);
+      }
+
+      // Add message as text node (safe from XSS)
+      const textNode = document.createTextNode(message);
+      statusEl.appendChild(textNode);
+
+      // Add progress bar if we have progress
+      if (progress !== undefined && progress > 0) {
+        const progressBar = document.createElement('sp-progress-bar');
+        progressBar.setAttribute('value', progress.toString());
+        progressBar.setAttribute('max', '100');
+        progressBar.style.marginTop = '8px';
+        statusEl.appendChild(progressBar);
+      }
+
+      // Add cancel button if operation can be cancelled
+      if (canCancel && isProcessing) {
+        const cancelBtn = document.createElement('sp-button');
+        cancelBtn.setAttribute('variant', 'secondary');
+        cancelBtn.setAttribute('size', 's');
+        cancelBtn.setAttribute('id', 'btn-cancel-operation');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.marginLeft = '8px';
+        statusEl.appendChild(cancelBtn);
+
+        // Attach event listener
+        cancelBtn.addEventListener('click', () => this.handleCancel());
+      }
     }
+  }
+
+  /**
+   * Handle cancel button click - stops the current operation.
+   */
+  private handleCancel(): void {
+    logger.info('Operation cancelled by user');
+    this.setStatus('Operation cancelled', false);
   }
 
   /**

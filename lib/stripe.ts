@@ -24,7 +24,7 @@ export function getStripeClient(): Stripe {
     }
 
     _stripe = new Stripe(secretKey, {
-      apiVersion: '2024-12-18.acacia',
+      apiVersion: '2025-02-24.acacia',
     });
   }
   return _stripe;
@@ -33,7 +33,7 @@ export function getStripeClient(): Stripe {
 // For backwards compatibility with existing code
 export const stripe = new Proxy({} as Stripe, {
   get(_, prop) {
-    return (getStripeClient() as Record<string | symbol, unknown>)[prop];
+    return (getStripeClient() as unknown as Record<string | symbol, unknown>)[prop];
   },
 });
 
