@@ -118,14 +118,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error) {
     console.error('Login error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    return res.status(500).json({
-      error: 'Internal server error',
-      debug: {
-        message: errorMessage,
-        stack: errorStack?.split('\n').slice(0, 5),
-      },
-    });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
