@@ -5,10 +5,24 @@ let _stripe: Stripe | null = null;
 
 export function getStripeClient(): Stripe {
   if (!_stripe) {
-    const secretKey = process.env.STRIPE_SECRET_KEY;
+    let secretKey = process.env.STRIPE_SECRET_KEY;
     if (!secretKey) {
       throw new Error('STRIPE_SECRET_KEY environment variable is not set');
     }
+
+    // Sanitize the key: remove quotes, whitespace, newlines, and other invalid chars
+    secretKey = secretKey
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+      .replace(/[\r\n\t]/g, '') // Remove newlines and tabs
+      .trim(); // Remove leading/trailing whitespace
+
+    // Validate the key format
+    if (!secretKey.startsWith('sk_test_') && !secretKey.startsWith('sk_live_')) {
+      console.error(
+        'Warning: STRIPE_SECRET_KEY does not appear to be a valid Stripe key (should start with sk_test_ or sk_live_)'
+      );
+    }
+
     _stripe = new Stripe(secretKey, {
       apiVersion: '2024-12-18.acacia',
     });
