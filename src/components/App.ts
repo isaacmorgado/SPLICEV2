@@ -9,6 +9,7 @@ import { logger, LogLevel } from '../lib/logger';
 import { isSpliceError, wrapError } from '../lib/errors';
 import { openExternalUrl } from '../lib/utils';
 import { backendClient } from '../api/backend-client';
+import { AuthPanel } from './AuthPanel';
 
 type TabId = 'home' | 'silence' | 'takes' | 'settings';
 
@@ -53,6 +54,8 @@ export class App {
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
   private pollCount: number = 0;
   private readonly maxPollCount: number = 60; // Poll for 5 minutes max (60 * 5 sec)
+  private authPanel: AuthPanel | null = null;
+  private isAuthenticated: boolean = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -89,6 +92,31 @@ export class App {
   }
 
   async init(): Promise<void> {
+    // Check if user is authenticated
+    this.isAuthenticated = await secureStorage.isAuthenticated();
+
+    if (!this.isAuthenticated) {
+      // Show authentication panel
+      logger.info('User not authenticated, showing auth panel');
+      this.showAuthPanel();
+      return;
+    }
+
+    // User is authenticated, load main app
+    await this.loadMainApp();
+  }
+
+  private showAuthPanel(): void {
+    this.authPanel = new AuthPanel(this.container, async () => {
+      // Auth success callback
+      this.authPanel = null;
+      this.isAuthenticated = true;
+      await this.loadMainApp();
+    });
+    this.authPanel.render();
+  }
+
+  private async loadMainApp(): Promise<void> {
     // Run health check in background (don't block init)
     backendClient.checkHealth().catch((e) => logger.warn('Health check failed', e));
 
@@ -700,6 +728,13 @@ export class App {
           Studio: 500 min/month + take analysis
         </section>
 
+        <!-- Account Actions -->
+        <section style="display: flex; flex-direction: column; gap: 8px;">
+          <sp-button variant="secondary" id="btn-logout" style="width: 100%;">
+            Logout
+          </sp-button>
+        </section>
+
         <!-- Debug Panel -->
         ${this.renderDebugPanel()}
       </div>
@@ -926,6 +961,10 @@ export class App {
     this.container
       .querySelector('#llm-gemini')
       ?.addEventListener('click', () => this.setLLMProvider('gemini'));
+    // Logout button
+    this.container
+      .querySelector('#btn-logout')
+      ?.addEventListener('click', () => this.handleLogout());
 
     // Debug panel
     this.container
@@ -1186,6 +1225,21 @@ export class App {
       this.render();
     } catch (error) {
       this.handleError(error, 'Failed to refresh subscription');
+    }
+  }
+
+  private async handleLogout(): Promise<void> {
+    this.setStatus('Logging out...', true);
+    try {
+      await backendClient.logout();
+      await secureStorage.clearAll();
+      this.isAuthenticated = false;
+      logger.info('User logged out successfully');
+
+      // Show auth panel again
+      this.showAuthPanel();
+    } catch (error) {
+      this.handleError(error, 'Failed to logout');
     }
   }
 

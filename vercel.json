@@ -79,6 +79,14 @@
     {
       "path": "/api/cron/expire-trials",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-database",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/retry-failed-webhooks",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

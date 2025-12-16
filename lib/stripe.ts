@@ -1,7 +1,26 @@
 import Stripe from 'stripe';
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-02-24.acacia',
+// Lazy initialization to avoid module-level errors in Vercel
+let _stripe: Stripe | null = null;
+
+export function getStripeClient(): Stripe {
+  if (!_stripe) {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('STRIPE_SECRET_KEY environment variable is not set');
+    }
+    _stripe = new Stripe(secretKey, {
+      apiVersion: '2024-12-18.acacia',
+    });
+  }
+  return _stripe;
+}
+
+// For backwards compatibility with existing code
+export const stripe = new Proxy({} as Stripe, {
+  get(_, prop) {
+    return (getStripeClient() as Record<string | symbol, unknown>)[prop];
+  },
 });
 
 // Tier configuration
