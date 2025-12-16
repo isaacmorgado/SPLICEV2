@@ -22,7 +22,11 @@ Splice is a hybrid application consisting of:
 1. **UXP Plugin** (Frontend) - Runs inside Adobe Premiere Pro
 2. **Vercel Serverless Functions** (Backend) - Handles AI processing, auth, and billing
 3. **Neon Postgres** (Database) - Stores users, subscriptions, and usage data
-4. **Third-party APIs** - OpenAI Whisper, ElevenLabs, Stripe
+4. **Third-party APIs**:
+   - **AI**: Groq Whisper (primary), OpenAI Whisper (fallback), GPT-4o-mini, Gemini Flash
+   - **Voice Isolation**: Modal + Demucs (primary), ElevenLabs (legacy)
+   - **Payments**: Stripe
+   - **Email**: SendGrid
 
 ### Key Design Principles
 
@@ -90,10 +94,12 @@ Splice is a hybrid application consisting of:
 ┌─────────────────┐                    ┌──────────────────┐
 │  Neon Postgres  │                    │  External APIs   │
 │                 │                    │                  │
-│  - users        │                    │  - OpenAI        │
-│  - subscriptions│                    │    Whisper       │
-│  - usage_records│                    │  - ElevenLabs    │
-│                 │                    │  - Stripe        │
+│  - users        │                    │  - Groq Whisper  │
+│  - subscriptions│                    │  - OpenAI        │
+│  - usage_records│                    │  - Modal/Demucs  │
+│  - referrals    │                    │  - ElevenLabs    │
+│  - api_keys     │                    │  - Stripe        │
+│  - audit_logs   │                    │  - SendGrid      │
 └─────────────────┘                    └──────────────────┘
 ```
 
@@ -136,25 +142,50 @@ api/
 │   ├── register.ts           # POST /api/auth/register
 │   ├── login.ts              # POST /api/auth/login
 │   ├── refresh.ts            # POST /api/auth/refresh
-│   └── verify.ts             # POST /api/auth/verify
+│   ├── verify.ts             # POST /api/auth/verify
+│   ├── request-reset.ts      # POST /api/auth/request-reset
+│   └── reset-password.ts     # POST /api/auth/reset-password
 ├── ai/
 │   ├── transcribe.ts         # POST /api/ai/transcribe
 │   ├── analyze-takes.ts      # POST /api/ai/analyze-takes
 │   └── isolate-audio.ts      # POST /api/ai/isolate-audio
 ├── subscription/
 │   ├── status.ts             # GET /api/subscription/status
-│   ├── usage.ts              # GET /api/subscription/usage
+│   ├── usage.ts              # GET/POST /api/subscription/usage
 │   └── tiers.ts              # GET /api/subscription/tiers
 ├── stripe/
 │   ├── create-checkout.ts    # POST /api/stripe/create-checkout
 │   ├── create-portal.ts      # POST /api/stripe/create-portal
+│   ├── cancel-subscription.ts # POST /api/stripe/cancel-subscription
 │   └── webhook.ts            # POST /api/stripe/webhook
-├── _lib/                     # Shared utilities
-│   ├── auth.ts               # JWT creation/verification
-│   ├── db.ts                 # Database queries
-│   ├── usage.ts              # Usage tracking/checking
-│   └── stripe.ts             # Stripe SDK wrapper
+├── user/
+│   ├── profile.ts            # GET/PUT /api/user/profile
+│   ├── api-keys.ts           # GET/POST/DELETE /api/user/api-keys
+│   └── analytics.ts          # GET /api/user/analytics
+├── referrals/
+│   ├── generate.ts           # POST /api/referrals/generate
+│   └── redeem.ts             # POST /api/referrals/redeem
+├── cron/
+│   ├── cleanup-database.ts   # Scheduled: Clean stale data
+│   ├── expire-trials.ts      # Scheduled: Expire trial subscriptions
+│   └── retry-failed-webhooks.ts # Scheduled: Retry failed Stripe webhooks
 └── health.ts                 # GET /api/health
+
+lib/                          # Shared backend utilities
+├── auth.ts                   # JWT creation/verification
+├── db.ts                     # Database queries & connection pool
+├── usage.ts                  # Usage tracking/checking
+├── stripe.ts                 # Stripe SDK wrapper
+├── rate-limit.ts             # API rate limiting (sliding window)
+├── referrals.ts              # Referral code generation & redemption
+├── email.ts                  # SendGrid email service
+├── api-keys.ts               # BYOK key encryption/storage
+├── audit-log.ts              # Activity logging for security
+├── middleware.ts             # Request validation & auth middleware
+├── password-reset.ts         # Password reset token management
+├── cancellation.ts           # Subscription cancellation logic
+├── groq.ts                   # Groq Whisper API client
+└── voice-isolation.ts        # Voice isolation (Modal/ElevenLabs)
 ```
 
 ---
@@ -394,6 +425,103 @@ api/
 └──────────────────────────────────────────────────────┘
 ```
 
+### 5. Referral System Flow
+
+```
+┌──────────────────┐
+│ User generates   │
+│ referral code    │
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ POST /api/referrals/generate                         │
+│                                                      │
+│ 1. Authenticate request                             │
+│ 2. Check if user already has a code                 │
+│ 3. Generate unique 8-char code                      │
+│ 4. Store in referrals table                         │
+│ 5. Return referral code + stats                     │
+└──────────────────────────────────────────────────────┘
+       │
+       │ (User shares code with friend)
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ Friend Signs Up                                      │
+│                                                      │
+│ 1. POST /api/auth/register with referral_code       │
+│ 2. Create user account                              │
+│ 3. POST /api/referrals/redeem                       │
+│    - Validate referral code exists                  │
+│    - Check code hasn't been used by this user       │
+│    - Award bonus minutes to BOTH users              │
+│    - Record redemption in referral_redemptions      │
+│ 4. Both referrer and referee get bonus minutes      │
+└──────────────────────────────────────────────────────┘
+```
+
+### 6. Rate Limiting System
+
+```
+┌──────────────────────────────────────────────────────┐
+│ Rate Limiting (Sliding Window Algorithm)            │
+├──────────────────────────────────────────────────────┤
+│                                                      │
+│ Limits by Tier:                                      │
+│ - Free:   10 requests/minute, 100/hour              │
+│ - Pro:    30 requests/minute, 500/hour              │
+│ - Studio: 60 requests/minute, 1000/hour             │
+│                                                      │
+│ Per-Endpoint Limits:                                 │
+│ - /api/ai/*: Lower limits (expensive operations)    │
+│ - /api/auth/*: Strict limits (prevent brute force)  │
+│ - /api/subscription/*: Higher limits (read-heavy)   │
+│                                                      │
+│ Implementation:                                      │
+│ 1. Check request against user's window              │
+│ 2. If limit exceeded: 429 Too Many Requests         │
+│ 3. Include Retry-After header                       │
+│ 4. Log excessive attempts for security monitoring   │
+└──────────────────────────────────────────────────────┘
+```
+
+### 7. BYOK (Bring Your Own Keys) Flow
+
+```
+┌──────────────────┐
+│ User adds their  │
+│ own API key      │
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ POST /api/user/api-keys                              │
+│                                                      │
+│ 1. Authenticate request                             │
+│ 2. Validate key format (provider-specific)          │
+│ 3. Encrypt key with AES-256-GCM                     │
+│    - Uses API_KEY_ENCRYPTION_SECRET                 │
+│    - Random IV per key                              │
+│ 4. Store encrypted key in database                  │
+│ 5. Return key metadata (last 4 chars, provider)     │
+└──────────────────────────────────────────────────────┘
+       │
+       │ (User makes AI request)
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ AI Request with BYOK                                 │
+│                                                      │
+│ 1. Check if user has BYOK key for this service      │
+│ 2. If yes:                                          │
+│    - Decrypt user's key                             │
+│    - Use their key for API call                     │
+│    - Skip usage tracking (unlimited for BYOK)       │
+│ 3. If no:                                           │
+│    - Use platform API key                           │
+│    - Track usage against subscription               │
+└──────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Database Schema
@@ -441,13 +569,73 @@ api/
 │ minutes (DECIMAL)                    │
 │ created_at (TIMESTAMP)               │
 └──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ referrals                            │
+├──────────────────────────────────────┤
+│ id (UUID, PK)                        │
+│ user_id (UUID, FK → users.id)        │
+│ code (VARCHAR, UNIQUE)               │
+│ redemptions_count (INTEGER)          │
+│ created_at (TIMESTAMP)               │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ referral_redemptions                 │
+├──────────────────────────────────────┤
+│ id (UUID, PK)                        │
+│ referral_id (UUID, FK → referrals)   │
+│ redeemed_by (UUID, FK → users.id)    │
+│ bonus_minutes (INTEGER)              │
+│ created_at (TIMESTAMP)               │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ user_api_keys                        │
+├──────────────────────────────────────┤
+│ id (UUID, PK)                        │
+│ user_id (UUID, FK → users.id)        │
+│ provider (VARCHAR)                   │
+│   [openai/groq/elevenlabs/gemini]    │
+│ encrypted_key (TEXT)                 │
+│ key_hint (VARCHAR)  # last 4 chars   │
+│ created_at (TIMESTAMP)               │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ audit_logs                           │
+├──────────────────────────────────────┤
+│ id (UUID, PK)                        │
+│ user_id (UUID, FK → users.id)        │
+│ action (VARCHAR)                     │
+│ resource (VARCHAR)                   │
+│ metadata (JSONB)                     │
+│ ip_address (VARCHAR)                 │
+│ created_at (TIMESTAMP)               │
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│ password_reset_tokens                │
+├──────────────────────────────────────┤
+│ id (UUID, PK)                        │
+│ user_id (UUID, FK → users.id)        │
+│ token_hash (VARCHAR)                 │
+│ expires_at (TIMESTAMP)               │
+│ used_at (TIMESTAMP, nullable)        │
+│ created_at (TIMESTAMP)               │
+└──────────────────────────────────────┘
 ```
 
 ### Key Relationships
 
 - **users → subscriptions**: One-to-one (enforced by UNIQUE constraint)
 - **users → usage_records**: One-to-many (audit trail)
-- **CASCADE DELETE**: When a user is deleted, subscription and usage records are also deleted
+- **users → referrals**: One-to-one (each user can have one referral code)
+- **users → user_api_keys**: One-to-many (multiple BYOK keys per user)
+- **users → audit_logs**: One-to-many (activity history)
+- **users → password_reset_tokens**: One-to-many (multiple reset attempts)
+- **referrals → referral_redemptions**: One-to-many (track who redeemed)
+- **CASCADE DELETE**: When a user is deleted, all related records are also deleted
 
 ### Indexes
 
@@ -464,6 +652,23 @@ CREATE INDEX idx_subscriptions_stripe_subscription ON subscriptions(stripe_subsc
 CREATE INDEX idx_usage_records_user_id ON usage_records(user_id);
 CREATE INDEX idx_usage_records_created_at ON usage_records(created_at);
 CREATE INDEX idx_usage_records_user_date ON usage_records(user_id, created_at DESC);
+
+-- Referral system
+CREATE UNIQUE INDEX idx_referrals_code ON referrals(code);
+CREATE INDEX idx_referrals_user_id ON referrals(user_id);
+CREATE INDEX idx_referral_redemptions_referral ON referral_redemptions(referral_id);
+
+-- BYOK keys
+CREATE INDEX idx_user_api_keys_user ON user_api_keys(user_id);
+CREATE UNIQUE INDEX idx_user_api_keys_user_provider ON user_api_keys(user_id, provider);
+
+-- Audit logs
+CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_created ON audit_logs(created_at DESC);
+
+-- Password reset
+CREATE INDEX idx_password_reset_user ON password_reset_tokens(user_id);
+CREATE INDEX idx_password_reset_expires ON password_reset_tokens(expires_at);
 ```
 
 ---
@@ -759,6 +964,7 @@ Future:  Cache common audio patterns
 - **Auto-scaling** handles variable load
 - **Edge functions** reduce latency globally
 - **Zero DevOps** - focus on features, not infrastructure
+- **Cron jobs** - scheduled tasks without infrastructure
 
 ### Why Neon Postgres?
 - **Serverless** - pay per use
@@ -774,6 +980,22 @@ Future:  Cache common audio patterns
 - **Industry standard** for SaaS billing
 - **Robust webhooks** for subscription events
 - **Customer portal** - self-service management
+
+### Why Groq for Transcription?
+- **67% cheaper** than OpenAI Whisper
+- **Faster inference** with dedicated hardware
+- **Same Whisper model** - identical accuracy
+
+### Why Modal + Demucs for Voice Isolation?
+- **97% cheaper** than ElevenLabs
+- **Open-source model** (Demucs by Meta)
+- **Better quality** for music/noise separation
+- **Scalable GPU** infrastructure
+
+### Why SendGrid for Email?
+- **Reliable delivery** for transactional emails
+- **Easy integration** with Vercel
+- **Detailed analytics** for delivery tracking
 
 ---
 

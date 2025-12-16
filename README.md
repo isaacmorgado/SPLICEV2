@@ -12,11 +12,19 @@ AI-powered automation plugin for Adobe Premiere Pro that streamlines video editi
 - **AI Transcription** - Generate accurate word-level timestamps with OpenAI Whisper
 - **Automated Timeline Editing** - Apply edits directly to your Premiere Pro timeline
 
+### Platform Features
+
+- **Referral System** - Earn bonus minutes by referring other creators
+- **BYOK (Bring Your Own Keys)** - Use your own API keys for unlimited processing
+- **Rate Limiting** - Fair usage protection with intelligent throttling
+- **Password Reset** - Secure account recovery via email
+- **Usage Analytics** - Track your processing history and patterns
+
 ### Subscription Tiers
 
 - **Free**: 10 minutes/month - Try core features
-- **Pro**: 120 minutes/month ($14.99) - For regular creators
-- **Studio**: 500 minutes/month ($39.99) - For professionals
+- **Pro**: 120 minutes/month ($14.99/mo or $119.99/yr) - For regular creators
+- **Studio**: 500 minutes/month ($39.99/mo or $319.99/yr) - For professionals
 
 ## Requirements
 
@@ -38,7 +46,7 @@ AI-powered automation plugin for Adobe Premiere Pro that streamlines video editi
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/splice.git
+git clone https://github.com/isaacmorgado/SPLICEV2.git
 cd splice
 
 # Install dependencies
@@ -83,8 +91,14 @@ npm run uxp:load
 - **Vercel Functions** - Serverless API endpoints
 - **Neon Postgres** - Serverless database
 - **Stripe** - Subscription management
-- **OpenAI Whisper** - Transcription
-- **ElevenLabs** - Voice isolation (optional)
+- **SendGrid** - Transactional emails
+
+### AI Services
+- **Groq Whisper** - Transcription (primary, 67% cheaper)
+- **OpenAI Whisper** - Transcription (fallback)
+- **GPT-4o-mini / Gemini Flash** - Take analysis (pluggable)
+- **Modal + Demucs** - Voice isolation (97% cheaper)
+- **ElevenLabs** - Voice isolation (legacy fallback)
 
 ## Development
 
@@ -127,25 +141,42 @@ npm run uxp:package
 ```
 splice/
 ├── api/                    # Vercel serverless functions
-│   ├── _lib/              # Shared utilities (auth, db, stripe)
-│   ├── ai/                # AI service endpoints
-│   ├── auth/              # Authentication endpoints
-│   ├── stripe/            # Payment endpoints
-│   ├── subscription/      # Usage & tier management
+│   ├── ai/                # AI service endpoints (transcribe, analyze-takes, isolate-audio)
+│   ├── auth/              # Authentication (login, register, verify, refresh, password reset)
+│   ├── cron/              # Scheduled jobs (cleanup, expire-trials, retry-webhooks)
+│   ├── referrals/         # Referral system (generate, redeem)
+│   ├── stripe/            # Payments (checkout, portal, webhook, cancel)
+│   ├── subscription/      # Usage & tier management (status, usage, tiers)
+│   ├── user/              # User management (profile, api-keys, analytics)
 │   └── health.ts          # Health check endpoint
+├── lib/                   # Shared backend utilities
+│   ├── auth.ts            # JWT authentication
+│   ├── db.ts              # Database queries
+│   ├── stripe.ts          # Stripe SDK wrapper
+│   ├── usage.ts           # Usage tracking
+│   ├── rate-limit.ts      # API rate limiting
+│   ├── referrals.ts       # Referral logic
+│   ├── email.ts           # Email service
+│   ├── api-keys.ts        # BYOK key management
+│   ├── audit-log.ts       # Activity logging
+│   └── middleware.ts      # Request middleware
 ├── db/
-│   └── schema.sql         # Database schema
-├── src/
-│   ├── api/               # API clients (Premiere, Whisper, etc)
+│   ├── schema.sql         # Database schema
+│   └── migrations/        # Database migrations
+├── src/                   # Frontend UXP plugin
+│   ├── api/               # API clients (Premiere, Whisper, Backend, etc)
 │   ├── components/        # UI components
 │   ├── config/            # Configuration constants
 │   ├── lib/               # Utilities (errors, logger, storage)
 │   ├── services/          # Core business logic
+│   ├── utils/             # Helper utilities
 │   └── types/             # TypeScript type definitions
 ├── tests/                 # Vitest test files
+├── scripts/               # Deployment and utility scripts
+├── docs/                  # Documentation
 ├── dist/                  # Build output
 ├── manifest.json          # UXP plugin manifest
-└── vercel.json           # Vercel deployment config
+└── vercel.json            # Vercel deployment config
 ```
 
 ## Environment Variables
@@ -153,21 +184,42 @@ splice/
 ### Backend (.env)
 ```env
 # Database
-DATABASE_URL=postgresql://...
+DATABASE_URL=postgresql://...@neon.tech/splice
 
 # Authentication
-JWT_SECRET=your-secret-key
+JWT_SECRET=your-secure-jwt-secret
 
-# Stripe
+# Stripe (Monthly)
 STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRO_PRICE_ID=price_...
 STRIPE_STUDIO_PRICE_ID=price_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Stripe (Yearly)
+STRIPE_PRO_YEARLY_PRICE_ID=price_...
+STRIPE_STUDIO_YEARLY_PRICE_ID=price_...
 
 # AI Services
 OPENAI_API_KEY=sk-...
-ELEVENLABS_API_KEY=... (optional)
-GEMINI_API_KEY=... (optional)
+GROQ_API_KEY=... (transcription - 67% cheaper)
+GEMINI_API_KEY=... (alternative LLM)
+
+# Voice Isolation
+ELEVENLABS_API_KEY=... (legacy)
+MODAL_TOKEN_ID=...
+MODAL_TOKEN_SECRET=...
+MODAL_VOICE_ISOLATION_URL=... (97% cheaper than ElevenLabs)
+
+# BYOK Encryption
+API_KEY_ENCRYPTION_SECRET=...
+
+# Cron Jobs
+CRON_SECRET=...
+
+# Email (SendGrid)
+EMAIL_PROVIDER=sendgrid
+SENDGRID_API_KEY=SG....
+EMAIL_FROM=noreply@splice.app
 ```
 
 ## Error Handling
@@ -241,7 +293,7 @@ MIT License - see [LICENSE](LICENSE) for details
 ## Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/splice/issues)
+- **Issues**: [GitHub Issues](https://github.com/isaacmorgado/SPLICEV2/issues)
 - **Email**: support@splice.app (for Studio tier)
 
 ## Roadmap
