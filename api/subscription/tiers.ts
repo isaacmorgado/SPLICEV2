@@ -39,11 +39,11 @@ function getTierFeatures(tierId: string): string[] {
     case 'free':
       return [...baseFeatures, '10 minutes/month'];
     case 'pro':
-      return [...baseFeatures, '120 minutes/month', 'Priority processing', 'Email support'];
+      return [...baseFeatures, '300 minutes/month', 'Priority processing', 'Email support'];
     case 'studio':
       return [
         ...baseFeatures,
-        '500 minutes/month',
+        '1000 minutes/month',
         'Priority processing',
         'Priority support',
         'Early access to new features',
